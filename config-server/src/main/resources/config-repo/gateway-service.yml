@@ -1,0 +1,9 @@
+gateway:
+  rate-limit:
+    replenish-rate: 10
+    burst-capacity: 20
+
+redis:
+  host: localhost
+  port: 6379
+  timeout: 2000ms

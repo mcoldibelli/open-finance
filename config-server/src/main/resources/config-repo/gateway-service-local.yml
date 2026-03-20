@@ -1,0 +1,8 @@
+gateway:
+  rate-limit:
+    replenish-rate: 100
+    burst-capacity: 200
+
+logging:
+  level:
+    org.springframework.cloud.gateway: TRACE
