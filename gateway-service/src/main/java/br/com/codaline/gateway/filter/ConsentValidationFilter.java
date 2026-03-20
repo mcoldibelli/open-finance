@@ -2,6 +2,10 @@ package br.com.codaline.gateway.filter;
 
 import br.com.codaline.gateway.consent.ConsentStatus;
 import br.com.codaline.gateway.consent.ConsentStore;
+import java.util.Optional;
+import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.core.Ordered;
@@ -13,6 +17,7 @@ import reactor.core.publisher.Mono;
 @Component
 public class ConsentValidationFilter implements GatewayFilter, Ordered {
 
+  private static final Logger log = LoggerFactory.getLogger(ConsentValidationFilter.class);
   private final ConsentStore consentStore;
 
   public ConsentValidationFilter(ConsentStore consentStore) {
@@ -31,40 +36,51 @@ public class ConsentValidationFilter implements GatewayFilter, Ordered {
     String requiredPermission = resolvePermission(path);
 
     return consentStore.findByConsentId(consentId)
-        .flatMap(consent -> {
-          if (consent.getStatus() != ConsentStatus.AUTHORISED) {
-            return reject(exchange, HttpStatus.FORBIDDEN, "Consent is " + consent.getStatus());
+        .map(Optional::of)
+        .defaultIfEmpty(Optional.empty())
+        .flatMap(optConsent -> {
+          if (optConsent.isEmpty()) {
+            return reject(exchange, HttpStatus.UNAUTHORIZED, "Consent not found");
           }
 
-          if (!consent.getPermissions().contains(requiredPermission)) {
+          var consent = optConsent.get();
+
+          if (consent.status() != ConsentStatus.AUTHORISED) {
+            return reject(exchange, HttpStatus.FORBIDDEN, "Consent is " + consent.status());
+          }
+
+          if (!consent.permissions().contains(requiredPermission)) {
             return reject(exchange, HttpStatus.FORBIDDEN,
                 "Permission " + requiredPermission + " not granted");
           }
 
           return chain.filter(exchange);
-        })
-        .switchIfEmpty(
-            reject(exchange, HttpStatus.UNAUTHORIZED, "Consent not found"));
+        });
   }
 
   private String resolvePermission(String path) {
-    if (path.contains("/balances")) {
+    Set<String> segments = Set.of(path.split("/"));
+
+    if (segments.contains("balances")) {
       return "ACCOUNTS_BALANCES_READ";
     }
-    if (path.contains("/transactions")) {
+    if (segments.contains("transactions")) {
       return "ACCOUNTS_TRANSACTIONS_READ";
     }
     return "ACCOUNTS_READ";
   }
 
   private Mono<Void> reject(ServerWebExchange exchange, HttpStatus status, String reason) {
-    exchange.getResponse().setStatusCode(status);
-    exchange.getResponse().getHeaders().add("X-Rejection-Reason", reason);
-    return exchange.getResponse().setComplete();
+    return Mono.defer(() -> {
+      log.warn("Consent rejected: {}", reason);
+      exchange.getResponse().setStatusCode(status);
+      exchange.getResponse().getHeaders().add("X-Rejection-Reason", reason);
+      return exchange.getResponse().setComplete();
+    });
   }
 
   @Override
   public int getOrder() {
-    return -90; // After FapiMtls (-100)
+    return -90;
   }
 }

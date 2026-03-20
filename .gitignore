@@ -29,3 +29,5 @@ secrets/
 # OS
 .DS_Store
 Thumbs.db
+
+**/as-private.key

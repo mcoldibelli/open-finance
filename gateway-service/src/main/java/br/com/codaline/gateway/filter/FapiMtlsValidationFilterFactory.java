@@ -5,8 +5,7 @@ import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFac
 import org.springframework.stereotype.Component;
 
 @Component
-public class FapiMtlsValidationFilterFactory
-    extends AbstractGatewayFilterFactory<Object> {
+public class FapiMtlsValidationFilterFactory extends AbstractGatewayFilterFactory<Object> {
 
   private final FapiMtlsValidationFilter filter;
 
