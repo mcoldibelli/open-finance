@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns="http://maven.apache.org/POM/4.0.0"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <artifactId>open-finance-gateway</artifactId>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <groupId>org.springframework.boot</groupId>
+          <version>${spring-boot.version}</version>
+        </plugin>
+        <plugin>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <configuration>
+            <source>${java.version}</source>
+            <target>${java.version}</target>
+          </configuration>
+          <groupId>org.apache.maven.plugins</groupId>
+          <version>3.11.0</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <groupId>org.springframework.boot</groupId>
+        <scope>import</scope>
+        <type>pom</type>
+        <version>${spring-boot.version}</version>
+      </dependency>
+
+      <dependency>
+        <artifactId>spring-cloud-dependencies</artifactId>
+        <groupId>org.springframework.cloud</groupId>
+        <scope>import</scope>
+        <type>pom</type>
+        <version>${spring-cloud.version}</version>
+      </dependency>
+
+      <dependency>
+        <artifactId>spring-cloud-aws-dependencies</artifactId>
+        <groupId>io.awspring.cloud</groupId>
+        <scope>import</scope>
+        <type>pom</type>
+        <version>${spring-cloud-aws.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+  <groupId>br.com.codaline</groupId>
+  <modelVersion>4.0.0</modelVersion>
+
+  <modules>
+    <module>config-server</module>
+    <module>gateway-service</module>
+    <module>accounts-service</module>
+  </modules>
+
+  <name>open-finance-gateway</name>
+
+  <packaging>pom</packaging>
+
+  <properties>
+    <java.version>21</java.version>
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+    <spring-boot.version>3.4.5</spring-boot.version>
+    <spring-cloud-aws.version>3.2.1</spring-cloud-aws.version>
+    <spring-cloud.version>2024.0.1</spring-cloud.version>
+  </properties>
+
+  <version>1.0.0</version>
+</project>

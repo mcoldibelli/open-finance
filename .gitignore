@@ -1,0 +1,30 @@
+# Maven
+target/
+*.class
+*.jar
+*.war
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+.eclipse/
+*.project
+*.classpath
+
+# Spring Boot
+*.log
+logs/
+
+# Secrets — NUNCA versionar
+*.p12
+*.jks
+*.pem
+*.key
+*.crt
+secrets/
+.env
+
+# OS
+.DS_Store
+Thumbs.db
