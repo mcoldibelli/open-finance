@@ -32,6 +32,8 @@ spring:
             - Path=/open-banking/accounts/v2/**
           filters:
             - AddResponseHeader=X-Gateway-Version, 1.0.0
+            - name: FapiMtlsValidation
+            - name: ConsentValidation
             - name: RequestRateLimiter
               args:
                 redis-rate-limiter.replenishRate: ${gateway.rate-limit.replenish-rate}
