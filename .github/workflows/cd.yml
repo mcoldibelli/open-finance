@@ -1,0 +1,98 @@
+name: CD
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/open-finance
+
+jobs:
+
+  build-images:
+    name: Build and push images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login no GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build e push config-server
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: config-server/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/config-server:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/config-server:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push gateway-service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: gateway-service/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/gateway-service:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/gateway-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push accounts-service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: accounts-service/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/accounts-service:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/accounts-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    name: Deploy staging
+    runs-on: ubuntu-latest
+    needs: build-images
+    environment: staging
+
+    steps:
+      - name: Simulate staging deploy
+        run: |
+          echo "Available images:"
+          echo "  ${{ env.IMAGE_PREFIX }}/config-server:${{ github.sha }}"
+          echo "  ${{ env.IMAGE_PREFIX }}/gateway-service:${{ github.sha }}"
+          echo "  ${{ env.IMAGE_PREFIX }}/accounts-service:${{ github.sha }}"
+          echo ""
+          echo "Staging deploy finished."
+          echo "In real prod: kubectl set image, helm upgrade, etc."
+
+  deploy-prod:
+    name: Deploy production
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+
+    steps:
+      - name: Simulate production deploy
+        run: |
+          echo "Production deploy with image:"
+          echo "  ${{ env.IMAGE_PREFIX }}/gateway-service:${{ github.sha }}"
+          echo ""
+          echo "Production deploy finished."

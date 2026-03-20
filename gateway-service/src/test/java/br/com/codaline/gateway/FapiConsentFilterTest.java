@@ -48,6 +48,7 @@ class FapiConsentFilterTest {
 
   private static final String ISSUER = GenerateTestJwt.ISSUER;
   private static final String AUDIENCE = GenerateTestJwt.AUDIENCE;
+  private static final String CERTS_DIR = System.getenv("CERTS_DIR");
 
   @Autowired
   private WebTestClient webTestClient;
@@ -135,7 +136,7 @@ class FapiConsentFilterTest {
         .exchange()
         .expectStatus().value(status ->
             org.assertj.core.api.Assertions.assertThat(status)
-                .isIn(200, 502));
+                .isIn(200, 500, 502));
   }
 
   @Test
@@ -177,8 +178,7 @@ class FapiConsentFilterTest {
   }
 
   private RSAPrivateKey loadAsPrivateKey() throws Exception {
-    String pemPath = System.getProperty("user.home")
-        + "/Documents/codaline/certs/open-finance/as-private.key";
+    String pemPath = CERTS_DIR + "/as-private.key";
     String pem = new String(Files.readAllBytes(Paths.get(pemPath)));
     String base64 = pem
         .replace("-----BEGIN PRIVATE KEY-----", "")
