@@ -8,11 +8,18 @@
     <plugins>
       <plugin>
         <artifactId>spring-boot-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>repackage</goal>
+            </goals>
+          </execution>
+        </executions>
         <groupId>org.springframework.boot</groupId>
       </plugin>
     </plugins>
   </build>
-  
+
   <dependencies>
     <dependency>
       <artifactId>spring-cloud-config-server</artifactId>

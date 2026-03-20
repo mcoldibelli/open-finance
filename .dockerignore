@@ -1,0 +1,13 @@
+target/
+*/target/
+.git/
+.gitignore
+*.md
+.env
+**/*.p12
+**/*.pem
+!gateway-service/src/main/resources/as-public.pem
+**/*.key
+**/*.crt
+.idea/
+*.iml
