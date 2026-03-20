@@ -2,7 +2,6 @@ package br.com.codaline.gateway.filter;
 
 import br.com.codaline.gateway.security.CertificateThumbprint;
 import br.com.codaline.gateway.security.JwtVerifier;
-import com.nimbusds.jose.proc.BadJOSEException;
 import com.nimbusds.jwt.JWTClaimsSet;
 import java.security.cert.X509Certificate;
 import java.text.ParseException;
@@ -47,8 +46,16 @@ public class FapiMtlsValidationFilter implements GatewayFilter, Ordered {
 
     String presentedThumbprint = thumbprint.get();
     return jwtVerifier.verify(token.get())
-        .flatMap(claims -> processValidatedClaims(exchange, chain, claims, presentedThumbprint))
-        .onErrorResume(Exception.class, e -> handleTokenError(exchange, e));
+        .onErrorMap(SecurityException.class, e -> e)
+        .onErrorMap(Exception.class, e -> new SecurityException("Invalid token: " + e.getMessage()))
+        .flatMap(claims -> {
+          try {
+            return processValidatedClaims(exchange, chain, claims, presentedThumbprint);
+          } catch (Exception e) {
+            return reject(exchange, "Token processing error");
+          }
+        })
+        .onErrorResume(SecurityException.class, e -> reject(exchange, e.getMessage()));
   }
 
   private Optional<String> extractThumbprint(ServerWebExchange exchange) {
@@ -112,20 +119,6 @@ public class FapiMtlsValidationFilter implements GatewayFilter, Ordered {
                 claims.getJWTID() != null ? claims.getJWTID() : "")
             .header("X-Cert-Thumbprint", presentedThumbprint)
         ).build();
-  }
-
-  private Mono<Void> handleTokenError(ServerWebExchange exchange, Exception e) {
-    if (e instanceof SecurityException) {
-      return reject(exchange, e.getMessage());
-    }
-    if (e instanceof ParseException) {
-      return reject(exchange, "Invalid token format");
-    }
-    if (e instanceof BadJOSEException) {
-      return reject(exchange, "Invalid token structure");
-    }
-    log.warn("Unexpected error in token validation", e);
-    return reject(exchange, "Invalid token");
   }
 
   private Mono<Void> reject(ServerWebExchange exchange, String reason) {
