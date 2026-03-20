@@ -24,6 +24,7 @@ logs/
 *.crt
 secrets/
 .env
+.env.*
 
 # OS
 .DS_Store

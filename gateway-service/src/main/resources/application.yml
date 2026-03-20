@@ -2,7 +2,7 @@ spring:
   application:
     name: gateway-service
   config:
-    import: "configserver:http://localhost:8888"
+    import: "optional:configserver:http://localhost:8888"
   profiles:
     active: local
   cloud:
@@ -11,3 +11,15 @@ spring:
       retry:
         max-attempts: 3
         initial-interval: 1000
+
+server:
+  port: 8443
+  ssl:
+    enabled: true
+    client-auth: need
+    key-store: ${SSL_KEYSTORE_PATH}
+    key-store-password: ${SSL_KEYSTORE_PASSWORD}
+    key-store-type: PKCS12
+    trust-store: ${SSL_TRUSTSTORE_PATH}
+    trust-store-password: ${SSL_TRUSTSTORE_PASSWORD}
+    trust-store-type: PKCS12
