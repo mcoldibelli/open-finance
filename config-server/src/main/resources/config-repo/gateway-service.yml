@@ -1,3 +1,6 @@
+server:
+  port: 8080
+
 gateway:
   rate-limit:
     replenish-rate: 10
@@ -7,3 +10,18 @@ redis:
   host: localhost
   port: 6379
   timeout: 2000ms
+
+spring:
+  cloud:
+    gateway:
+      httpserver:
+        wiretap: false
+      httpclient:
+        wiretap: false
+      routes:
+        - id: accounts-route
+          uri: http://localhost:8081
+          predicates:
+            - Path=/open-banking/accounts/v2/**
+          filters:
+            - AddResponseHeader=X-Gateway-Version, 1.0.0
