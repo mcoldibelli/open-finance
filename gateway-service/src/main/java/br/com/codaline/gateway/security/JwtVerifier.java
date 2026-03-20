@@ -24,6 +24,8 @@ import reactor.core.scheduler.Schedulers;
 @Component
 public class JwtVerifier {
 
+  private static final Pattern WHITESPACE = Pattern.compile("\\s+");
+
   @Value("classpath:as-public.pem")
   private Resource publicKeyResource;
 
@@ -32,8 +34,6 @@ public class JwtVerifier {
 
   @Value("${jwt.audience:https://gateway.localdev.codaline}")
   private String expectedAudience;
-
-  private static final Pattern WHITESPACE = Pattern.compile("\\s+");
 
   private RSASSAVerifier verifier;
 
@@ -84,6 +84,10 @@ public class JwtVerifier {
       X509EncodedKeySpec spec = new X509EncodedKeySpec(decoded);
       return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(spec);
     }
+  }
+
+  public void setPublicKey(RSAPublicKey publicKey) {
+    this.verifier = new RSASSAVerifier(publicKey);
   }
 
 }

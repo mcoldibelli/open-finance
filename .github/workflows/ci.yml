@@ -11,17 +11,6 @@ jobs:
     name: Build and tests
     runs-on: ubuntu-latest
 
-    services:
-      redis:
-        image: redis:7.2-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 3
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,43 +22,8 @@ jobs:
           distribution: "temurin"
           cache: maven
 
-      - name: Generate test certificates
-        run: |
-          mkdir -p /tmp/certs
-
-          openssl genrsa -out /tmp/certs/ca.key 2048
-          openssl req -new -x509 -days 365 -key /tmp/certs/ca.key \
-            -out /tmp/certs/ca.crt -subj "/CN=CI Test CA/O=CI/C=BR"
-
-          openssl genrsa -out /tmp/certs/as-private.key 2048
-          openssl rsa -in /tmp/certs/as-private.key \
-            -pubout -out /tmp/certs/as-public.pem
-
-          openssl genrsa -out /tmp/certs/client.key 2048
-          openssl req -new -key /tmp/certs/client.key \
-            -out /tmp/certs/client.csr -subj "/CN=tpp-ci/O=CI/C=BR"
-          openssl x509 -req -days 365 \
-            -in /tmp/certs/client.csr \
-            -CA /tmp/certs/ca.crt -CAkey /tmp/certs/ca.key \
-            -CAcreateserial -out /tmp/certs/client.crt
-
-          openssl pkcs12 -export \
-            -in /tmp/certs/client.crt -inkey /tmp/certs/client.key \
-            -out /tmp/certs/client.p12 -name tpp-simulado \
-            -passout pass:client123
-
-      - name: Copy AS public key to classpath
-        run: |
-          cp /tmp/certs/as-public.pem \
-            gateway-service/src/main/resources/as-public.pem
-
-      - name: Build e testes
-        run: ./mvnw verify -DskipTests=false -e
-        env:
-          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
-          SSL_KEYSTORE_PASSWORD: ${{ secrets.SSL_KEYSTORE_PASSWORD }}
-          SSL_TRUSTSTORE_PASSWORD: ${{ secrets.SSL_TRUSTSTORE_PASSWORD }}
-          CERTS_DIR: /tmp/certs
+      - name: Build and tests
+        run: ./mvnw verify -DskipTests=false
 
       - name: Publish tests results
         uses: actions/upload-artifact@v4

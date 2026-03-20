@@ -2,6 +2,7 @@ package br.com.codaline.gateway;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 
+import br.com.codaline.gateway.config.TestJwtConfig;
 import br.com.codaline.gateway.consent.ConsentData;
 import br.com.codaline.gateway.consent.ConsentStatus;
 import br.com.codaline.gateway.consent.ConsentStore;
@@ -10,26 +11,20 @@ import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.security.KeyFactory;
 import java.security.interfaces.RSAPrivateKey;
-import java.security.spec.PKCS8EncodedKeySpec;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureWebTestClient
 @TestPropertySource(properties = {
     "spring.config.import=",
@@ -39,31 +34,20 @@ import org.springframework.test.web.reactive.server.WebTestClient;
     "spring.cloud.gateway.routes[0].uri=http://localhost:8081",
     "spring.cloud.gateway.routes[0].predicates[0]=Path=/open-banking/accounts/v2/**",
     "spring.cloud.gateway.routes[0].filters[0]=FapiMtlsValidation",
-    "spring.cloud.gateway.routes[0].filters[1]=ConsentValidation",
-    "spring.data.redis.host=localhost",
-    "spring.data.redis.port=6379",
-    "spring.data.redis.password=openfinance123"
+    "spring.cloud.gateway.routes[0].filters[1]=ConsentValidation"
 })
-class FapiConsentFilterTest {
+@Import(TestJwtConfig.class)
+class FapiConsentFilterTest extends IntegrationTestBase {
 
-  private static final String ISSUER = GenerateTestJwt.ISSUER;
-  private static final String AUDIENCE = GenerateTestJwt.AUDIENCE;
-  private static final String CERTS_DIR = System.getenv("CERTS_DIR");
+  private static final String ISSUER = "https://as.localdev.codaline";
+  private static final String AUDIENCE = "https://gateway.localdev.codaline";
+  private static String validToken;
 
   @Autowired
   private WebTestClient webTestClient;
 
-  @Autowired
-  private ConsentStore consentStore;
-
-  private String validToken;
-  private String thumbprint;
-
-  @BeforeEach
-  void setup() throws Exception {
-    thumbprint = GenerateTestJwt.loadClientThumbprint();
-    RSAPrivateKey asPrivateKey = loadAsPrivateKey();
-
+  @BeforeAll
+  static void setupOnce(@Autowired ConsentStore consentStore) throws Exception {
     ConsentData consent = new ConsentData(
         "consent-filter-test",
         ConsentStatus.AUTHORISED,
@@ -71,7 +55,7 @@ class FapiConsentFilterTest {
         "12345678900",
         "tpp-simulado"
     );
-    consentStore.save(consent, Duration.ofMinutes(5)).block();
+    consentStore.save(consent, Duration.ofMinutes(30)).block();
 
     JWTClaimsSet claims = new JWTClaimsSet.Builder()
         .jwtID(UUID.randomUUID().toString())
@@ -80,7 +64,7 @@ class FapiConsentFilterTest {
         .claim("consent_id", "consent-filter-test")
         .claim("cpf", "12345678900")
         .claim("client_id", "tpp-simulado")
-        .claim("cnf", Map.of("x5t#S256", thumbprint))
+        .claim("cnf", Map.of("x5t#S256", CLIENT_THUMBPRINT))
         .issueTime(new Date())
         .expirationTime(new Date(System.currentTimeMillis() + 3600_000))
         .build();
@@ -88,7 +72,7 @@ class FapiConsentFilterTest {
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).build(), claims
     );
-    jwt.sign(new RSASSASigner(asPrivateKey));
+    jwt.sign(new RSASSASigner(AS_KEY_PAIR.getPrivate()));
     validToken = jwt.serialize();
   }
 
@@ -103,8 +87,6 @@ class FapiConsentFilterTest {
 
   @Test
   void comTokenSemCnf_deveRetornar401() throws Exception {
-    RSAPrivateKey asPrivateKey = loadAsPrivateKey();
-
     JWTClaimsSet claims = new JWTClaimsSet.Builder()
         .jwtID(UUID.randomUUID().toString())
         .issuer(ISSUER)
@@ -116,7 +98,7 @@ class FapiConsentFilterTest {
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).build(), claims
     );
-    jwt.sign(new RSASSASigner(asPrivateKey));
+    jwt.sign(new RSASSASigner((RSAPrivateKey) AS_KEY_PAIR.getPrivate()));
 
     webTestClient.get()
         .uri("/open-banking/accounts/v2")
@@ -132,7 +114,7 @@ class FapiConsentFilterTest {
     webTestClient.get()
         .uri("/open-banking/accounts/v2")
         .header("Authorization", "Bearer " + validToken)
-        .header("X-Cert-Thumbprint", thumbprint)
+        .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
         .exchange()
         .expectStatus().value(status ->
             org.assertj.core.api.Assertions.assertThat(status)
@@ -144,7 +126,7 @@ class FapiConsentFilterTest {
     webTestClient.get()
         .uri("/open-banking/accounts/v2/acc-001/transactions")
         .header("Authorization", "Bearer " + validToken)
-        .header("X-Cert-Thumbprint", thumbprint)
+        .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
         .exchange()
         .expectStatus().isForbidden()
         .expectHeader().value("X-Rejection-Reason", reason ->
@@ -153,39 +135,25 @@ class FapiConsentFilterTest {
 
   @Test
   void consentimentoInexistente_deveRetornar401() throws Exception {
-    RSAPrivateKey asPrivateKey = loadAsPrivateKey();
-
     JWTClaimsSet claims = new JWTClaimsSet.Builder()
         .jwtID(UUID.randomUUID().toString())
         .issuer(ISSUER)
         .audience(AUDIENCE)
         .claim("consent_id", "consent-inexistente-999")
-        .claim("cnf", Map.of("x5t#S256", thumbprint))
+        .claim("cnf", Map.of("x5t#S256", CLIENT_THUMBPRINT))
         .expirationTime(new Date(System.currentTimeMillis() + 3600_000))
         .build();
 
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).build(), claims
     );
-    jwt.sign(new RSASSASigner(asPrivateKey));
+    jwt.sign(new RSASSASigner((RSAPrivateKey) AS_KEY_PAIR.getPrivate()));
 
     webTestClient.get()
         .uri("/open-banking/accounts/v2")
         .header("Authorization", "Bearer " + jwt.serialize())
-        .header("X-Cert-Thumbprint", thumbprint)
+        .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
         .exchange()
         .expectStatus().isUnauthorized();
-  }
-
-  private RSAPrivateKey loadAsPrivateKey() throws Exception {
-    String pemPath = CERTS_DIR + "/as-private.key";
-    String pem = new String(Files.readAllBytes(Paths.get(pemPath)));
-    String base64 = pem
-        .replace("-----BEGIN PRIVATE KEY-----", "")
-        .replace("-----END PRIVATE KEY-----", "")
-        .replaceAll("\\s+", "");
-    byte[] decoded = Base64.getDecoder().decode(base64);
-    return (RSAPrivateKey) KeyFactory.getInstance("RSA")
-        .generatePrivate(new PKCS8EncodedKeySpec(decoded));
   }
 }
