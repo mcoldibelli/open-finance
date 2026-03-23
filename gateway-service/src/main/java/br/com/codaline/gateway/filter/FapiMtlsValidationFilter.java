@@ -7,6 +7,7 @@ import java.security.cert.X509Certificate;
 import java.text.ParseException;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -109,16 +110,24 @@ public class FapiMtlsValidationFilter implements GatewayFilter, Ordered {
     String consentId = claims.getStringClaim("consent_id");
     String cpf = claims.getStringClaim("cpf");
     String clientId = claims.getStringClaim("client_id");
+    String jti = claims.getJWTID();
+    String tokenExp = String.valueOf(claims.getExpirationTime().getTime() / 1000);
+
+    String fapiInteractionId = Optional.ofNullable(
+            exchange.getRequest().getHeaders().getFirst("X-FAPI-Interaction-ID"))
+        .filter(id -> !id.isBlank())
+        .orElse(UUID.randomUUID().toString());
 
     return exchange.mutate()
-        .request(r -> r
-            .header("X-Consent-ID", consentId != null ? consentId : "")
-            .header("X-Caller-CPF", cpf != null ? cpf : "")
-            .header("X-Client-ID", clientId != null ? clientId : "")
-            .header("X-FAPI-Interaction-ID",
-                claims.getJWTID() != null ? claims.getJWTID() : "")
-            .header("X-Cert-Thumbprint", presentedThumbprint)
-        ).build();
+        .request(r -> r.headers(h -> {
+          h.set("X-Consent-ID", consentId != null ? consentId : "");
+          h.set("X-Caller-CPF", cpf != null ? cpf : "");
+          h.set("X-Client-ID", clientId != null ? clientId : "");
+          h.set("X-FAPI-Interaction-ID", fapiInteractionId);
+          h.set("X-Token-Jti", jti != null ? jti : "");
+          h.set("X-Cert-Thumbprint", presentedThumbprint);
+          h.set("X-Token-Exp", tokenExp);
+        })).build();
   }
 
   private Mono<Void> reject(ServerWebExchange exchange, String reason) {

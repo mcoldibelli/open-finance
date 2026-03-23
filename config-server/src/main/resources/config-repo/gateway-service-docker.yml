@@ -15,6 +15,7 @@ spring:
           filters:
             - AddResponseHeader=X-Gateway-Version, 1.0.0
             - name: FapiMtlsValidation
+            - name: JtiReplay
             - name: ConsentValidation
             - name: RequestRateLimiter
               args:

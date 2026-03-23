@@ -117,7 +117,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
         .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
         .exchange()
         .expectStatus().value(status ->
-            org.assertj.core.api.Assertions.assertThat(status)
+            assertThat(status)
                 .isIn(200, 500, 502));
   }
 
