@@ -1,8 +1,8 @@
 # Open Finance
 
-API Gateway que implementa os requisitos de segurança do Open Finance Brasil (FAPI 1.0 Advanced) —
-mTLS, certificate-bound access tokens (RFC 8705), validação de consentimentos e rate limiting por
-consent_id.
+API Gateway que implementa os requisitos de seguranca do Open Finance Brasil (FAPI 1.0 Advanced) —
+mTLS, certificate-bound access tokens (RFC 8705), JTI replay prevention, validacao de consentimentos
+e rate limiting por consent_id.
 
 [![CI](https://github.com/mcoldibelli/open-finance/actions/workflows/ci.yml/badge.svg)](https://github.com/mcoldibelli/open-finance/actions/workflows/ci.yml)
 [![CD](https://github.com/mcoldibelli/open-finance/actions/workflows/cd.yml/badge.svg)](https://github.com/mcoldibelli/open-finance/actions/workflows/cd.yml)
@@ -27,11 +27,13 @@ flowchart TB
         direction TB
         F1["FapiMtlsValidation — order(-100)
         mTLS + JWT verify + cnf binding"]
-        F2["ConsentValidation — order(-90)
-        status + permissões"]
-        F3["RequestRateLimiter
+        F2["JtiReplay — order(-95)
+        anti-replay via Redis SETNX"]
+        F3["ConsentValidation — order(-90)
+        status + permissoes"]
+        F4["RequestRateLimiter
         chave = consent_id"]
-        F1 --> F2 --> F3
+        F1 --> F2 --> F3 --> F4
     end
 
     CS[Config Server :8888]
@@ -40,12 +42,12 @@ flowchart TB
 
     TPP -->|"mTLS (client cert) + Bearer JWT"| gw
     gw -.->|perfis por ambiente| CS
-    gw -->|consent store + rate limit| REDIS
+    gw -->|consent store + JTI + rate limit| REDIS
     gw -->|proxy reverso| ACCS
 ```
 
-O Gateway é o único ponto de entrada. Nenhum serviço interno aceita tráfego externo. O TPP (
-instituição participante do Open Finance) precisa apresentar certificado de cliente via mTLS e um
+O Gateway e o unico ponto de entrada. Nenhum servico interno aceita trafego externo. O TPP (
+instituicao participante do Open Finance) precisa apresentar certificado de cliente via mTLS e um
 JWT assinado pelo Authorization Server para que a request passe pela cadeia de filtros.
 
 ---
@@ -54,32 +56,54 @@ JWT assinado pelo Authorization Server para que a request passe pela cadeia de f
 
 | Tecnologia               | Papel                         | Por que essa escolha                                                                                                 |
 |--------------------------|-------------------------------|----------------------------------------------------------------------------------------------------------------------|
-| **Java 21**              | Runtime                       | Records para modelos imutáveis, LTS                                                                                  |
-| **Spring Cloud Gateway** | API Gateway                   | Reativo (Project Reactor), integração nativa com filtros ordenados e `SslInfo` para acesso ao certificado do cliente |
-| **Spring Cloud Config**  | Configuração centralizada     | Perfis por ambiente (`local`, `docker`), sem rebuild — rotas e rate limits podem mudar sem redeploy                  |
-| **Redis**                | Rate limiting + consent store | TTL nativo para expiração de consentimentos, operações atômicas via Lua script, Lettuce (non-blocking)               |
-| **Nimbus JOSE+JWT**      | Processamento JWT             | Implementação de referência para JOSE/JWT, suporte a RS256 e claims customizadas (`cnf`, `consent_id`)               |
-| **Docker**               | Containerização               | Multi-stage build (JDK → JRE), imagem Alpine, usuário non-root                                                       |
-| **GitHub Actions**       | CI/CD                         | Geração dinâmica de certificados no CI, push para GHCR, pipeline staging -> prod                                     |
+| **Java 21**              | Runtime                       | Records para modelos imutaveis, LTS                                                                                  |
+| **Spring Cloud Gateway** | API Gateway                   | Reativo (Project Reactor), integracao nativa com filtros ordenados e `SslInfo` para acesso ao certificado do cliente |
+| **Spring Cloud Config**  | Configuracao centralizada     | Perfis por ambiente (`local`, `docker`), sem rebuild — rotas e rate limits podem mudar sem redeploy                  |
+| **Redis**                | Rate limiting + consent + JTI | TTL nativo para expiracao de consentimentos e JTI replay, operacoes atomicas via Lua script, Lettuce (non-blocking)  |
+| **Nimbus JOSE+JWT**      | Processamento JWT             | Implementacao de referencia para JOSE/JWT, suporte a RS256 e claims customizadas (`cnf`, `consent_id`)               |
+| **Bouncy Castle**        | Certificados de teste         | Geracao programatica de KeyPair e X.509 em memoria — testes reproduziveis sem arquivos externos                      |
+| **Testcontainers**       | Redis em teste                | Container Redis efemero por classe de teste, sem dependencia de infra local                                          |
+| **Docker**               | Containerizacao               | Multi-stage build (JDK -> JRE), imagem Alpine, usuario non-root                                                     |
+| **GitHub Actions**       | CI/CD                         | Build e testes automaticos, push para GHCR, pipeline staging -> prod                                                 |
 
 ---
 
-## Decisões de design
+## Decisoes de design
 
-### Por que mTLS vem antes do rate limiting
+### Pipeline de filtros e ordem de execucao
 
 Os filtros do Gateway executam por ordem definida via `getOrder()`:
 
 | Filtro                     | Order   | Responsabilidade                                           |
 |----------------------------|---------|------------------------------------------------------------|
 | `FapiMtlsValidationFilter` | -100    | Identidade: valida certificado + JWT + cnf binding         |
-| `ConsentValidationFilter`  | -90     | Autorização: verifica status e permissões do consentimento |
+| `JtiReplayFilter`          | -95     | Anti-replay: rejeita JTI ja utilizado (Redis SETNX + TTL)  |
+| `ConsentValidationFilter`  | -90     | Autorizacao: verifica status e permissoes do consentimento |
 | `RequestRateLimiter`       | default | Throttling: limita requests por `consent_id`               |
 
 A ordem importa: se o rate limiter rodasse primeiro, um atacante sem certificado consumiria a cota
-de rate limit de outros TPPs. Autenticação deve sempre preceder controle de tráfego. Além disso, o
-`consent_id` usado como chave do rate limiter só existe após o `FapiMtlsValidationFilter` extraí-lo
-do JWT e injetá-lo no header `X-Consent-ID`.
+de rate limit de outros TPPs. Autenticacao deve sempre preceder controle de trafego. Alem disso, o
+`consent_id` usado como chave do rate limiter so existe apos o `FapiMtlsValidationFilter` extrai-lo
+do JWT e injeta-lo no header `X-Consent-ID`.
+
+### Headers injetados pelo FapiMtlsValidationFilter
+
+Apos validar o JWT, o filtro mTLS injeta headers no request mutado para consumo pelos filtros
+seguintes e pelo servico downstream:
+
+| Header                  | Fonte                                | Consumidor                      |
+|-------------------------|--------------------------------------|---------------------------------|
+| `X-Consent-ID`         | claim `consent_id` do JWT            | ConsentValidationFilter         |
+| `X-Caller-CPF`         | claim `cpf` do JWT                   | Servico downstream              |
+| `X-Client-ID`          | claim `client_id` do JWT             | Servico downstream              |
+| `X-FAPI-Interaction-ID`| Header do client ou UUID gerado      | Rastreamento FAPI               |
+| `X-Token-Jti`          | claim `jti` do JWT                   | JtiReplayFilter                 |
+| `X-Token-Exp`          | claim `exp` do JWT (epoch seconds)   | JtiReplayFilter                 |
+| `X-Cert-Thumbprint`    | SHA-256 do certificado apresentado   | Servico downstream              |
+
+O `X-FAPI-Interaction-ID` preserva o valor enviado pelo client (correlation ID conforme spec FAPI).
+Se ausente, um UUID e gerado. O `X-Token-Jti` e um header separado que carrega o JWT ID para o
+filtro de replay — semanticamente distinto do interaction ID.
 
 ### cnf binding (RFC 8705) — o ataque que previne
 
@@ -89,12 +113,67 @@ resolve isso:
 1. O Authorization Server gera o JWT com a claim `cnf.x5t#S256` = SHA-256 do certificado do TPP
 2. O Gateway computa o SHA-256 do certificado apresentado via mTLS (
    `CertificateThumbprint.computeS256`)
-3. Se o thumbprint do JWT for diferente do thumbprint do certificado, a request é rejeitada
+3. Se o thumbprint do JWT for diferente do thumbprint do certificado, a request e rejeitada
 
-Isso garante que um token só funciona com o certificado que o originou. Mesmo com o JWT vazado, um
-atacante não consegue replicar o certificado TLS do TPP.
+A validacao do thumbprint binding e **incondicional** — acontece independentemente do modo SSL estar
+ativo ou nao. Isso previne que uma desabilitacao acidental do SSL em producao neutralize a validacao
+de seguranca silenciosamente.
 
-### Config Server vs application.yml local — o que vai em cada um
+### JTI replay prevention
+
+O `JtiReplayFilter` usa `SETNX` atomico no Redis com TTL igual ao tempo restante de vida do JWT:
+
+```java
+redisTemplate.opsForValue()
+    .setIfAbsent("jti:" + jti, "1", Duration.ofSeconds(ttl))
+```
+
+- Primeiro uso: Redis registra o JTI com TTL → request passa
+- Replay: chave ja existe → 401 "Token already used"
+- TTL expira junto com o JWT → memoria do Redis e liberada automaticamente
+
+Se o Redis estiver indisponivel, o filtro retorna **503 Service Unavailable** (fail-closed). A
+decisao de fail-closed e intencional: em um contexto FAPI, permitir replay por falha de infra e mais
+danoso do que rejeitar temporariamente requests legitimas.
+
+### JwtVerifier imutavel
+
+O `JwtVerifier` recebe `RSASSAVerifier` via construtor — sem `setPublicKey()`, sem `@PostConstruct`.
+
+```
+Producao                             Testes
+JwtConfig.java                       TestJwtConfig.java
+@ConditionalOnResource(as-public.pem)   @TestConfiguration
+  └─ @Bean RSASSAVerifier               └─ @Bean RSASSAVerifier
+       (carrega PEM do classpath)             (chave gerada em memoria)
+          │                                        │
+          └──────────┐            ┌────────────────┘
+                     ▼            ▼
+               JwtVerifier(RSASSAVerifier verifier)
+```
+
+`JwtConfig` so e carregada quando `classpath:as-public.pem` existe (`@ConditionalOnResource`). Nos
+testes, o `TestJwtConfig` fornece o bean com a chave publica gerada pelo `CertificateGenerator`.
+
+### Tratamento de erros no pipeline reativo
+
+```java
+jwtVerifier.verify(token.get())
+    .onErrorMap(e -> !(e instanceof SecurityException),
+        e -> new SecurityException("Invalid token: " + e.getMessage()))
+    .flatMap(claims -> processValidatedClaims(...))
+    .onErrorResume(SecurityException.class, e -> reject(...));
+```
+
+Um unico `onErrorMap` com predicado converte qualquer excecao non-Security (ex: `ParseException` do
+Nimbus) em `SecurityException`, preservando as que ja sao Security. Isso garante que o
+`onErrorResume` final captura **todos** os erros de validacao, sem vazar stack traces internos como
+500.
+
+Mensagens de erro de seguranca sao **genericas** no header de resposta (`Invalid token issuer`) —
+detalhes como o issuer/audience real do token sao logados a nivel WARN, nunca expostos ao cliente.
+
+### Config Server vs application.yml local
 
 ```
 application.yml (local)          Config Server (gateway-service.yml)
@@ -108,64 +187,7 @@ application.yml (local)          Config Server (gateway-service.yml)
 
 **Regra**: o SSL vai no `application.yml` local porque o servidor precisa do keystore/truststore
 para iniciar o listener TLS **antes** de conectar ao Config Server. Se o SSL dependesse do Config
-Server, o Gateway não conseguiria sequer fazer a request HTTP para buscar a config.
-
-Rotas, Redis e rate limits vão no Config Server porque podem mudar entre ambientes (local vs Docker
-vs prod) sem rebuild.
-
-### `optional:configserver:` vs `fail-fast`
-
-```yaml
-spring:
-  config:
-    import: "optional:configserver:${CONFIG_SERVER_URI:http://localhost:8888}"
-  cloud:
-    config:
-      fail-fast: true
-      retry:
-        max-attempts: 3
-```
-
-Parece contraditório, mas resolve cenários distintos:
-
-- **`optional:`** — permite o Gateway subir sem Config Server (ex: rodar testes locais, IDE). Cai no
-  config local.
-- **`fail-fast: true` + retry** — quando o Config Server está configurado mas temporariamente
-  indisponível (ex: startup no Docker Compose), ele tenta 3x antes de falhar.
-
-Em produção, o correto é remover `optional:` e manter `fail-fast: true` para garantir que o Gateway
-nunca suba com config stale.
-
-### `onErrorMap` antes do `flatMap`
-
-```java
-jwtVerifier.verify(token.get())
-    .onErrorMap(SecurityException .class, e -> e)                    // mantém SecurityException
-    .onErrorMap(Exception .class, e -> new SecurityException(...))  // encapsula o resto
-    .flatMap(claims -> processValidatedClaims(...))
-    .onErrorResume(SecurityException .class, e -> reject(...));
-```
-
-Sem o `onErrorMap`, uma `ParseException` do Nimbus propagaria pelo pipeline reativo como erro
-genérico. O `onErrorResume` no final só captura `SecurityException` — qualquer outra exceção vazaria
-como 500 para o cliente, potencialmente expondo detalhes internos (stack trace, versão da lib).
-
-O `onErrorMap` garante que **todo erro de JWT vira `SecurityException` antes de entrar no `flatMap`
-**, isolando a camada de validação da camada de processamento.
-
-### Por que o AS assina o JWT e não o TPP
-
-No modelo FAPI (e OAuth 2.0 em geral), o fluxo é:
-
-1. TPP se autentica no Authorization Server via mTLS
-2. AS valida o consentimento e emite um JWT **assinado com a chave privada do AS**
-3. Gateway valida a assinatura com a **chave pública do AS** (`as-public.pem`)
-
-Se o TPP assinasse o JWT, não haveria como garantir que ele não forjou claims (`consent_id`, `cpf`,
-permissões). O AS é a única entidade que pode atestar que o consentimento existe e está autorizado.
-
-Por isso o `JwtVerifier` carrega a chave pública do AS no `@PostConstruct` e verifica issuer,
-audience e expiração, qualquer JWT não assinado pelo AS é rejeitado.
+Server, o Gateway nao conseguiria sequer fazer a request HTTP para buscar a config.
 
 ### `Mono.defer()` no `reject()`
 
@@ -180,34 +202,41 @@ private Mono<Void> reject(ServerWebExchange exchange, String reason) {
 ```
 
 Sem `Mono.defer()`, o `setStatusCode` e `addHeader` seriam executados **no momento da montagem do
-pipeline**, não na subscrição. Em um pipeline reativo, métodos que retornam `Mono<Void>` podem ser
-compostos mas nunca subscritos (ex: quando outro operador curto-circuita antes). O `defer()` garante
-que os side-effects só ocorrem quando o `Mono` é de fato executado.
+pipeline**, nao na subscricao. O `defer()` garante que os side-effects so ocorrem quando o `Mono` e
+de fato executado.
 
-### Usuário non-root nos Dockerfiles
+### Por que o AS assina o JWT e nao o TPP
+
+No modelo FAPI (e OAuth 2.0 em geral), o fluxo e:
+
+1. TPP se autentica no Authorization Server via mTLS
+2. AS valida o consentimento e emite um JWT **assinado com a chave privada do AS**
+3. Gateway valida a assinatura com a **chave publica do AS** (`as-public.pem`)
+
+Se o TPP assinasse o JWT, nao haveria como garantir que ele nao forjou claims (`consent_id`, `cpf`,
+permissoes). O AS e a unica entidade que pode atestar que o consentimento existe e esta autorizado.
+
+### Usuario non-root nos Dockerfiles
 
 ```dockerfile
 RUN addgroup -S spring && adduser -S spring -G spring
 USER spring
 ```
 
-Todo Dockerfile cria um usuário `spring` e roda o processo Java como esse usuário. Se um atacante
-explorar uma vulnerabilidade na aplicação (ex: RCE via desserialização), ele terá permissões
-limitadas dentro do container — sem acesso a `/etc/shadow`, sem capacidade de montar volumes, sem
-escalar para o host.
+Todo Dockerfile cria um usuario `spring` e roda o processo Java como esse usuario. Se um atacante
+explorar uma vulnerabilidade na aplicacao, ele tera permissoes limitadas dentro do container.
 
 ---
 
 ## Como rodar localmente
 
-### Pré-requisitos
+### Pre-requisitos
 
 - Java 21
 - Docker e Docker Compose
-- OpenSSL
-- keytool
+- OpenSSL e keytool (apenas para execucao com mTLS real)
 
-### 1. Gerar PKI local
+### 1. Gerar PKI local (para execucao com Docker Compose)
 
 ```bash
 mkdir -p certs && cd certs
@@ -232,10 +261,8 @@ openssl req -new -key client.key -out client.csr \
   -subj "/CN=tpp-simulado/O=TPP/C=BR"
 openssl x509 -req -days 365 -in client.csr \
   -CA ca.crt -CAkey ca.key -CAcreateserial -out client.crt
-openssl pkcs12 -export -in client.crt -inkey client.key \
-  -out client.p12 -name tpp-simulado -passout pass:client123
 
-# Truststore (contém o CA)
+# Truststore (contem o CA)
 keytool -import -file ca.crt -alias ca-root \
   -keystore truststore.p12 -storetype PKCS12 \
   -storepass truststore123 -noprompt
@@ -244,7 +271,7 @@ keytool -import -file ca.crt -alias ca-root \
 openssl genrsa -out as-private.key 2048
 openssl rsa -in as-private.key -pubout -out as-public.pem
 
-# Copiar chave pública para o classpath do Gateway
+# Copiar chave publica para o classpath do Gateway
 cp as-public.pem ../gateway-service/src/main/resources/
 ```
 
@@ -256,82 +283,60 @@ SSL_KEYSTORE_PASSWORD=gateway123
 SSL_TRUSTSTORE_PASSWORD=truststore123
 SSL_KEYSTORE_PATH=/absolute/path/to/certs/server.p12
 SSL_TRUSTSTORE_PATH=/absolute/path/to/certs/truststore.p12
-CERTS_DIR=/absolute/path/to/certs
 CONFIG_SERVER_URI=http://config-server:8888
 ```
 
-### 3. Subir os serviços
+### 3. Subir os servicos
 
 ```bash
 docker compose up --build
-```
-
-### 4. Testar a cadeia de segurança
-
-```bash
-# Teste 1 — Sem certificado de cliente (TLS handshake falha)
-curl -v --cacert certs/ca.crt \
-  https://localhost:8080/open-banking/accounts/v2
-# Esperado: SSL handshake error — server exige client-auth: need
-
-# Teste 2 — Com certificado mas sem Bearer token (401)
-curl --cacert certs/ca.crt \
-  --cert certs/client.crt --key certs/client.key \
-  https://localhost:8080/open-banking/accounts/v2
-# Esperado: 401 + header X-Rejection-Reason: "Bearer token required"
-
-# Teste 3 — Cadeia completa: cert + JWT válido
-# (Requer gerar JWT com GenerateTestJwt e seed de consentimento no Redis)
-export CERTS_DIR=/absolute/path/to/certs
-java -cp gateway-service/target/classes br.com.codaline.gateway.GenerateTestJwt
-
-# Seed do consentimento no Redis:
-redis-cli -a openfinance123 HSET consent:consent-teste-001 \
-  consent_id consent-teste-001 \
-  status AUTHORISED \
-  permissions ACCOUNTS_READ,ACCOUNTS_BALANCES_READ \
-  cpf 12345678900 \
-  client_id tpp-simulado
-
-curl --cacert certs/ca.crt \
-  --cert certs/client.crt --key certs/client.key \
-  -H "Authorization: Bearer <jwt-gerado-acima>" \
-  https://localhost:8080/open-banking/accounts/v2
-# Esperado: 200 + payload de contas
 ```
 
 ---
 
 ## Testes
 
+Os testes de integracao **nao dependem de arquivos externos**. Certificados e chaves sao gerados
+programaticamente em memoria via Bouncy Castle, e o Redis roda em container efemero via
+Testcontainers.
+
 ```bash
-# Rodar com certificados gerados
-export CERTS_DIR=/absolute/path/to/certs
+# Nenhuma variavel de ambiente necessaria
 ./mvnw verify
 ```
 
+### Infraestrutura de teste
+
+| Componente            | Como funciona nos testes                                         |
+|-----------------------|------------------------------------------------------------------|
+| **Certificados**      | `CertificateGenerator` gera KeyPair RSA e X.509 em memoria      |
+| **Thumbprint**        | Computado com SHA-256 do certificado gerado                      |
+| **Chave publica AS**  | `TestJwtConfig` injeta `RSASSAVerifier` com chave gerada         |
+| **Redis**             | Testcontainers sobe `redis:7.2-alpine` com porta dinamica        |
+| **SSL**               | Desabilitado — thumbprint via header `X-Cert-Thumbprint`         |
+| **Config Server**     | Desabilitado — rotas definidas via `@TestPropertySource`         |
+
 ### O que cada teste valida
 
-| Teste                                               | Cenário                                      | Resposta esperada                        |
-|-----------------------------------------------------|----------------------------------------------|------------------------------------------|
-| `semToken_deveRetornar401`                          | Request sem header Authorization             | 401 + `X-Rejection-Reason`               |
-| `comTokenSemCnf_deveRetornar401`                    | JWT válido mas sem claim `cnf.x5t#S256`      | 401 — cnf binding falha                  |
-| `comTokenValido_consentimentoAutorizado_devePassar` | JWT + consent AUTHORISED + permissão correta | 200 (ou 502 se accounts-service offline) |
-| `semPermissaoTransacoes_deveRetornar403`            | Consent sem `ACCOUNTS_TRANSACTIONS_READ`     | 403 — permissão negada                   |
-| `consentimentoInexistente_deveRetornar401`          | consent_id que não existe no Redis           | 401 — consent not found                  |
+#### FapiConsentFilterTest (8 testes)
 
-### Por que `CERTS_DIR` em vez de paths hardcoded
+| Teste                                                        | Cenario                                         | Resposta |
+|--------------------------------------------------------------|-------------------------------------------------|----------|
+| `dado_semToken_quando_request_entao_retorna401`              | Request sem header Authorization                | 401      |
+| `dado_tokenSemCnf_quando_request_entao_retorna401`          | JWT valido mas sem claim `cnf.x5t#S256`         | 401      |
+| `dado_tokenValido_quando_consentimentoAutorizado_entao_passa`| JWT + consent AUTHORISED + permissao correta    | 200/502  |
+| `dado_semPermissao_quando_acessaTransacoes_entao_retorna403` | Consent sem `ACCOUNTS_TRANSACTIONS_READ`        | 403      |
+| `dado_consentimentoInexistente_quando_request_entao_retorna401`| consent_id nao existe no Redis                | 401      |
+| `dado_tokenExpirado_quando_request_entao_retorna401`         | JWT com `exp` no passado                        | 401      |
+| `dado_assinaturaInvalida_quando_request_entao_retorna401`    | JWT assinado com chave diferente do AS          | 401      |
+| `dado_consentimentoRevogado_quando_request_entao_retorna403` | Consent com status REVOKED                      | 403      |
 
-Os testes leem certificados de `System.getenv("CERTS_DIR")`. Isso resolve dois problemas:
+#### JtiReplayFilterTest (2 testes)
 
-1. **Portabilidade** — no CI, os certificados são gerados em `/tmp/certs`. Na máquina do dev, ficam
-   em qualquer diretório. Hardcodar o path quebraria um dos dois.
-2. **Segurança** — chaves privadas (`as-private.key`, `client.key`) nunca são commitadas. O
-   `.gitignore` bloqueia `*.pem`, `*.key`, `*.p12`. O teste precisa de um path externo para
-   encontrá-las.
-
-Os testes desabilitam SSL e Config Server via `@TestPropertySource` para rodar isoladamente com
-`WebTestClient`, validando apenas a lógica dos filtros FAPI.
+| Teste                                                        | Cenario                                         | Resposta |
+|--------------------------------------------------------------|-------------------------------------------------|----------|
+| `dado_mesmoToken_quando_replayAttack_entao_retorna401`       | Mesmo JWT enviado 2x — segundo uso rejeitado    | 401      |
+| `dado_tokensDistintos_quando_requests_entao_ambosPassam`     | JTIs diferentes passam independentemente         | 200/502  |
 
 ---
 
@@ -340,14 +345,13 @@ Os testes desabilitam SSL e Config Server via `@TestPropertySource` para rodar i
 ```
 push (qualquer branch)
   └─ CI: build + testes
-       ├─ Gera certificados dinâmicos (openssl)
-       ├─ Copia as-public.pem para o classpath
-       ├─ Sobe Redis como service container
-       └─ ./mvnw verify
+       ├─ Setup Java 21
+       ├─ ./mvnw verify (Testcontainers sobe Redis automaticamente)
+       └─ Upload de relatorios Surefire
 
 push (main)
   └─ CD: build images + deploy
-       ├─ Build multi-stage (Dockerfile por módulo)
+       ├─ Build multi-stage (Dockerfile por modulo)
        ├─ Push para GHCR (ghcr.io/mcoldibelli/open-finance/*)
        │   ├─ config-server:latest + :sha
        │   ├─ gateway-service:latest + :sha
@@ -356,11 +360,7 @@ push (main)
        └─ Deploy production
 ```
 
-### Certificados dinâmicos no CI
-
-O CI gera uma PKI completa em cada execução — CA, server cert, client cert e AS key pair. Isso
-garante que os testes nunca dependem de certificados commitados ou secrets com material
-criptográfico. A chave pública do AS é copiada para o classpath antes do build para que o
-`JwtVerifier` consiga carregá-la via `@Value("classpath:as-public.pem")`.
+O CI nao precisa gerar certificados nem configurar variaveis de ambiente — toda a infraestrutura
+criptografica e criada em memoria pelo Bouncy Castle durante a execucao dos testes.
 
 ---
