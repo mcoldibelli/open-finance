@@ -1,0 +1,22 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres-openfinance:5432/reconciliation
+    username: reconciliation
+    password: ${POSTGRES_PASSWORD}
+
+  data:
+    redis:
+      host: redis
+      port: 6379
+      password: ${REDIS_PASSWORD}
+
+  kafka:
+    bootstrap-servers: kafka-openfinance:9092
+
+reconciliation:
+  files:
+    input-path: /data/input
+
+logging:
+  level:
+    br.com.codaline: INFO
