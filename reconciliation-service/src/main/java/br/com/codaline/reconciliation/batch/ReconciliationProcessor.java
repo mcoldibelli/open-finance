@@ -8,7 +8,6 @@ import br.com.codaline.reconciliation.domain.ReconciliationStatus;
 import org.springframework.batch.core.ExitStatus;
 import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.StepExecutionListener;
-import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.stereotype.Component;
 
@@ -19,8 +18,10 @@ public class ReconciliationProcessor implements
 
   private final LedgerTransactionRepository ledger;
   private final ReconciliationRunRepository runRepository;
+  private int ispbStart;
+  private int ispbEnd;
 
-  private @StepScope ReconciliationRun currentRun;
+  private ReconciliationRun currentRun;
 
   public ReconciliationProcessor(LedgerTransactionRepository ledger,
       ReconciliationRunRepository runRepository) {
@@ -37,6 +38,9 @@ public class ReconciliationProcessor implements
     currentRun = runRepository.findById(runId)
         .orElseThrow(() -> new IllegalStateException(
             "ReconciliationRun not found for id: " + runId));
+
+    ispbStart = stepExecution.getExecutionContext().getInt("ispbStart");
+    ispbEnd = stepExecution.getExecutionContext().getInt("ispbEnd");
   }
 
   @Override
@@ -46,6 +50,11 @@ public class ReconciliationProcessor implements
 
   @Override
   public ReconciliationResult process(CipTransaction item) throws Exception {
+    int ispb = Integer.parseInt(item.debtorIspb().trim());
+    if (ispb < ispbStart || ispb > ispbEnd) {
+      return null;
+    }
+
     var ledgerTx = ledger.findByEndToEndId(item.endToEndId());
 
     if (ledgerTx.isEmpty()) {

@@ -12,6 +12,7 @@ import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.support.CompositeItemWriter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.transaction.PlatformTransactionManager;
 
 @Configuration
@@ -20,10 +21,21 @@ public class ReconciliationJobConfig {
 
   @Bean
   public Job reconciliationJob(JobRepository jobRepository, ReconciliationJobListener listener,
-      Step reconciliationStep) {
+      Step masterStep) {
     return new JobBuilder("reconciliationJob", jobRepository)
         .listener(listener)
-        .start(reconciliationStep)
+        .start(masterStep)
+        .build();
+  }
+
+  @Bean
+  public Step masterStep(JobRepository jobRepository, IspbRangePartitioner partitioner,
+      Step reconciliationStep) {
+    return new StepBuilder("masterStep", jobRepository)
+        .partitioner("reconciliationStep", partitioner)
+        .step(reconciliationStep)
+        .gridSize(4)
+        .taskExecutor(new SimpleAsyncTaskExecutor())
         .build();
   }
 
