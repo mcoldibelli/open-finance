@@ -118,7 +118,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     volumes:
-      - ./data/inpout:/data/input
+      - ./data/input:/data/input
     depends_on:
       config-server:
         condition: service_healthy
