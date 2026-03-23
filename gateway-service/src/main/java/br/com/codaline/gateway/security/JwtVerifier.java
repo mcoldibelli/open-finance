@@ -3,20 +3,10 @@ package br.com.codaline.gateway.security;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import jakarta.annotation.PostConstruct;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.security.GeneralSecurityException;
-import java.security.KeyFactory;
-import java.security.interfaces.RSAPublicKey;
-import java.security.spec.X509EncodedKeySpec;
-import java.util.Base64;
 import java.util.Date;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -24,25 +14,18 @@ import reactor.core.scheduler.Schedulers;
 @Component
 public class JwtVerifier {
 
-  private static final Pattern WHITESPACE = Pattern.compile("\\s+");
+  private static final Logger log = LoggerFactory.getLogger(JwtVerifier.class);
 
-  @Value("classpath:as-public.pem")
-  private Resource publicKeyResource;
+  private final RSASSAVerifier verifier;
+  private final String expectedIssuer;
+  private final String expectedAudience;
 
-  @Value("${jwt.issuer:https://as.localdev.codaline}")
-  private String expectedIssuer;
-
-  @Value("${jwt.audience:https://gateway.localdev.codaline}")
-  private String expectedAudience;
-
-  private RSASSAVerifier verifier;
-
-  @PostConstruct
-  public void init() throws GeneralSecurityException, IOException {
-    if (this.verifier == null) {
-      RSAPublicKey publicKey = loadPublicKey();
-      this.verifier = new RSASSAVerifier(publicKey);
-    }
+  public JwtVerifier(RSASSAVerifier verifier,
+      @Value("${jwt.issuer:https://as.localdev.codaline}") String expectedIssuer,
+      @Value("${jwt.audience:https://gateway.localdev.codaline}") String expectedAudience) {
+    this.verifier = verifier;
+    this.expectedIssuer = expectedIssuer;
+    this.expectedAudience = expectedAudience;
   }
 
   public Mono<JWTClaimsSet> verify(String token) {
@@ -61,35 +44,17 @@ public class JwtVerifier {
       }
 
       if (!expectedIssuer.equals(claims.getIssuer())) {
-        throw new SecurityException("Invalid issuer: " + claims.getIssuer());
+        log.warn("JWT issuer mismatch: expected={}, actual={}", expectedIssuer, claims.getIssuer());
+        throw new SecurityException("Invalid token issuer");
       }
 
       if (!claims.getAudience().contains(expectedAudience)) {
-        throw new SecurityException("Invalid audience: " + claims.getAudience());
+        log.warn("JWT audience mismatch: expected={}, actual={}", expectedAudience, claims.getAudience());
+        throw new SecurityException("Invalid token audience");
       }
 
       return claims;
     }).subscribeOn(Schedulers.boundedElastic());
-  }
-
-  private RSAPublicKey loadPublicKey() throws GeneralSecurityException, IOException {
-    try (BufferedReader reader = new BufferedReader(
-        new InputStreamReader(publicKeyResource.getInputStream())
-    )) {
-      String pem = reader.lines().collect(Collectors.joining("\n"));
-      String base64 = pem
-          .replace("-----BEGIN PUBLIC KEY-----", "")
-          .replace("-----END PUBLIC KEY-----", "")
-          .replaceAll(WHITESPACE.pattern(), "");
-
-      byte[] decoded = Base64.getDecoder().decode(base64);
-      X509EncodedKeySpec spec = new X509EncodedKeySpec(decoded);
-      return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(spec);
-    }
-  }
-
-  public void setPublicKey(RSAPublicKey publicKey) {
-    this.verifier = new RSASSAVerifier(publicKey);
   }
 
 }
