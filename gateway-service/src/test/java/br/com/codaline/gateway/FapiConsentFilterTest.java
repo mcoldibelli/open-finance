@@ -1,7 +1,8 @@
 package br.com.codaline.gateway;
 
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 
+import br.com.codaline.gateway.config.CertificateGenerator;
 import br.com.codaline.gateway.config.TestJwtConfig;
 import br.com.codaline.gateway.consent.ConsentData;
 import br.com.codaline.gateway.consent.ConsentStatus;
@@ -11,6 +12,7 @@ import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import java.security.KeyPair;
 import java.security.interfaces.RSAPrivateKey;
 import java.time.Duration;
 import java.util.Date;
@@ -77,7 +79,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
   }
 
   @Test
-  void semToken_deveRetornar401() {
+  void dado_semToken_quando_request_entao_retorna401() {
     webTestClient.get()
         .uri("/open-banking/accounts/v2")
         .exchange()
@@ -86,7 +88,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
   }
 
   @Test
-  void comTokenSemCnf_deveRetornar401() throws Exception {
+  void dado_tokenSemCnf_quando_request_entao_retorna401() throws Exception {
     JWTClaimsSet claims = new JWTClaimsSet.Builder()
         .jwtID(UUID.randomUUID().toString())
         .issuer(ISSUER)
@@ -103,6 +105,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
     webTestClient.get()
         .uri("/open-banking/accounts/v2")
         .header("Authorization", "Bearer " + jwt.serialize())
+        .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
         .exchange()
         .expectStatus().isUnauthorized()
         .expectHeader().valueEquals("X-Rejection-Reason",
@@ -110,19 +113,18 @@ class FapiConsentFilterTest extends IntegrationTestBase {
   }
 
   @Test
-  void comTokenValido_consentimentoAutorizado_devePassar() {
+  void dado_tokenValido_quando_consentimentoAutorizado_entao_passa() {
     webTestClient.get()
         .uri("/open-banking/accounts/v2")
         .header("Authorization", "Bearer " + validToken)
         .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
         .exchange()
         .expectStatus().value(status ->
-            assertThat(status)
-                .isIn(200, 500, 502));
+            assertThat(status).isIn(200, 500, 502));
   }
 
   @Test
-  void semPermissaoTransacoes_deveRetornar403() {
+  void dado_semPermissao_quando_acessaTransacoes_entao_retorna403() {
     webTestClient.get()
         .uri("/open-banking/accounts/v2/acc-001/transactions")
         .header("Authorization", "Bearer " + validToken)
@@ -134,7 +136,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
   }
 
   @Test
-  void consentimentoInexistente_deveRetornar401() throws Exception {
+  void dado_consentimentoInexistente_quando_request_entao_retorna401() throws Exception {
     JWTClaimsSet claims = new JWTClaimsSet.Builder()
         .jwtID(UUID.randomUUID().toString())
         .issuer(ISSUER)
@@ -155,5 +157,88 @@ class FapiConsentFilterTest extends IntegrationTestBase {
         .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
         .exchange()
         .expectStatus().isUnauthorized();
+  }
+
+  @Test
+  void dado_tokenExpirado_quando_request_entao_retorna401() throws Exception {
+    JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        .jwtID(UUID.randomUUID().toString())
+        .issuer(ISSUER)
+        .audience(AUDIENCE)
+        .claim("consent_id", "consent-filter-test")
+        .claim("cnf", Map.of("x5t#S256", CLIENT_THUMBPRINT))
+        .expirationTime(new Date(System.currentTimeMillis() - 60_000))
+        .build();
+
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).build(), claims
+    );
+    jwt.sign(new RSASSASigner((RSAPrivateKey) AS_KEY_PAIR.getPrivate()));
+
+    webTestClient.get()
+        .uri("/open-banking/accounts/v2")
+        .header("Authorization", "Bearer " + jwt.serialize())
+        .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
+        .exchange()
+        .expectStatus().isUnauthorized();
+  }
+
+  @Test
+  void dado_assinaturaInvalida_quando_request_entao_retorna401() throws Exception {
+    KeyPair wrongKeyPair = CertificateGenerator.generateRsaKeyPair();
+
+    JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        .jwtID(UUID.randomUUID().toString())
+        .issuer(ISSUER)
+        .audience(AUDIENCE)
+        .claim("consent_id", "consent-filter-test")
+        .claim("cnf", Map.of("x5t#S256", CLIENT_THUMBPRINT))
+        .expirationTime(new Date(System.currentTimeMillis() + 3600_000))
+        .build();
+
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).build(), claims
+    );
+    jwt.sign(new RSASSASigner((RSAPrivateKey) wrongKeyPair.getPrivate()));
+
+    webTestClient.get()
+        .uri("/open-banking/accounts/v2")
+        .header("Authorization", "Bearer " + jwt.serialize())
+        .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
+        .exchange()
+        .expectStatus().isUnauthorized();
+  }
+
+  @Test
+  void dado_consentimentoRevogado_quando_request_entao_retorna403(
+      @Autowired ConsentStore consentStore) throws Exception {
+    String revokedConsentId = "consent-revoked-" + UUID.randomUUID();
+    ConsentData revoked = new ConsentData(
+        revokedConsentId, ConsentStatus.REVOKED,
+        Set.of("ACCOUNTS_READ"), "12345678900", "tpp-simulado");
+    consentStore.save(revoked, Duration.ofMinutes(5)).block();
+
+    JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        .jwtID(UUID.randomUUID().toString())
+        .issuer(ISSUER)
+        .audience(AUDIENCE)
+        .claim("consent_id", revokedConsentId)
+        .claim("cpf", "12345678900")
+        .claim("client_id", "tpp-simulado")
+        .claim("cnf", Map.of("x5t#S256", CLIENT_THUMBPRINT))
+        .expirationTime(new Date(System.currentTimeMillis() + 3600_000))
+        .build();
+
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).build(), claims
+    );
+    jwt.sign(new RSASSASigner((RSAPrivateKey) AS_KEY_PAIR.getPrivate()));
+
+    webTestClient.get()
+        .uri("/open-banking/accounts/v2")
+        .header("Authorization", "Bearer " + jwt.serialize())
+        .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
+        .exchange()
+        .expectStatus().isForbidden();
   }
 }

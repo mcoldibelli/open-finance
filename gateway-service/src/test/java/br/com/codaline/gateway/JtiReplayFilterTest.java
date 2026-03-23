@@ -1,6 +1,6 @@
 package br.com.codaline.gateway;
 
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import br.com.codaline.gateway.config.TestJwtConfig;
 import br.com.codaline.gateway.consent.ConsentData;
@@ -12,7 +12,6 @@ import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
@@ -51,8 +50,7 @@ class JtiReplayFilterTest extends IntegrationTestBase {
   }
 
   @Test
-  @DisplayName("Token iguais devem acusar Replay Attack")
-  void tokensIguais_devemGerarReplayAttack() throws JOSEException {
+  void dado_mesmoToken_quando_replayAttack_entao_retorna401() throws JOSEException {
     String token = TestUtils.gerarToken(UUID.randomUUID().toString());
 
     webTestClient.get()
@@ -74,8 +72,7 @@ class JtiReplayFilterTest extends IntegrationTestBase {
   }
 
   @Test
-  @DisplayName("Tokens distintos devem passar independentemente")
-  void tokensDistintos_devemPassarIndependentemente() throws JOSEException {
+  void dado_tokensDistintos_quando_requests_entao_ambosPassam() throws JOSEException {
     String token = TestUtils.gerarToken(UUID.randomUUID().toString());
     String token2 = TestUtils.gerarToken(UUID.randomUUID().toString());
 
