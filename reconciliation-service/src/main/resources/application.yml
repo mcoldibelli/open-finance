@@ -10,6 +10,13 @@ spring:
       initialize-schema: embedded
     job:
       enabled: false
+  jpa:
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 500
+        order_inserts: true
+
 
 reconciliation:
   files:

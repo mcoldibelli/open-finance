@@ -65,6 +65,7 @@ public class ReconciliationResult {
     this.cipAmount = cipAmount;
     this.ledgerAmount = ledgerAmount;
     this.status = status;
+    this.processedAt = LocalDateTime.now();
   }
 
   public Long getId() {

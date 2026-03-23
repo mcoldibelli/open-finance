@@ -35,7 +35,7 @@ public class LedgerTransaction {
   private String creditorIspb;
 
   @Column(nullable = false)
-  private LocalDate transactinDate;
+  private LocalDate transactionDate;
 
   public LedgerTransaction() {
   }
@@ -77,10 +77,10 @@ public class LedgerTransaction {
   }
 
   public LocalDate getTransactinDate() {
-    return transactinDate;
+    return transactionDate;
   }
 
-  public void setTransactinDate(LocalDate transactinDate) {
-    this.transactinDate = transactinDate;
+  public void setTransactinDate(LocalDate transactionDate) {
+    this.transactionDate = transactionDate;
   }
 }

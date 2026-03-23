@@ -114,6 +114,6 @@ public class ReconciliationRun {
   }
 
   public enum RunStatus {
-    RUNNING, COMPLETED, FAILED, SKIPPED_DUPLCATE
+    RUNNING, COMPLETED, FAILED, SKIPPED_DUPLICATE
   }
 }
