@@ -47,8 +47,8 @@ public class FapiMtlsValidationFilter implements GatewayFilter, Ordered {
 
     String presentedThumbprint = thumbprint.get();
     return jwtVerifier.verify(token.get())
-        .onErrorMap(SecurityException.class, e -> e)
-        .onErrorMap(Exception.class, e -> new SecurityException("Invalid token: " + e.getMessage()))
+        .onErrorMap(e -> !(e instanceof SecurityException),
+            e -> new SecurityException("Invalid token: " + e.getMessage()))
         .flatMap(claims -> {
           try {
             return processValidatedClaims(exchange, chain, claims, presentedThumbprint);
@@ -73,7 +73,7 @@ public class FapiMtlsValidationFilter implements GatewayFilter, Ordered {
     }
 
     String headerThumbprint = exchange.getRequest().getHeaders().getFirst("X-Cert-Thumbprint");
-    return Optional.of(headerThumbprint != null ? headerThumbprint : "no-cert-in-non-ssl-mode");
+    return Optional.ofNullable(headerThumbprint).filter(h -> !h.isBlank());
   }
 
   private Optional<String> extractBearerToken(ServerWebExchange exchange) {
@@ -94,7 +94,7 @@ public class FapiMtlsValidationFilter implements GatewayFilter, Ordered {
       }
 
       String tokenThumbprint = (String) cnf.get("x5t#S256");
-      if (sslEnabled && !presentedThumbprint.equals(tokenThumbprint)) {
+      if (!presentedThumbprint.equals(tokenThumbprint)) {
         return reject(exchange, "Certificate thumbprint mismatch");
       }
 
