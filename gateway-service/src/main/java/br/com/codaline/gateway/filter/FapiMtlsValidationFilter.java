@@ -10,25 +10,21 @@ import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.SslInfo;
-import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-@Component
 public class FapiMtlsValidationFilter implements GatewayFilter, Ordered {
 
   private static final Logger log = LoggerFactory.getLogger(FapiMtlsValidationFilter.class);
   private final boolean sslEnabled;
   private final JwtVerifier jwtVerifier;
 
-  public FapiMtlsValidationFilter(@Value("${server.ssl.enabled:false}") boolean sslEnabled,
-      JwtVerifier jwtVerifier) {
+  public FapiMtlsValidationFilter(boolean sslEnabled, JwtVerifier jwtVerifier) {
     this.sslEnabled = sslEnabled;
     this.jwtVerifier = jwtVerifier;
   }

@@ -1,5 +1,7 @@
 package br.com.codaline.gateway.config;
 
+import br.com.codaline.gateway.filter.FapiMtlsValidationFilter;
+import br.com.codaline.gateway.security.JwtVerifier;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -18,7 +20,7 @@ import org.springframework.core.io.Resource;
 
 @Configuration
 @ConditionalOnResource(resources = "classpath:as-public.pem")
-public class JwtConfig {
+public class FapiSecurityConfig {
 
   @Bean
   public RSASSAVerifier rsassaVerifier(
@@ -26,6 +28,20 @@ public class JwtConfig {
       throws GeneralSecurityException, IOException {
     RSAPublicKey publicKey = loadPublicKey(publicKeyResource);
     return new RSASSAVerifier(publicKey);
+  }
+
+  @Bean
+  public JwtVerifier jwtVerifier(RSASSAVerifier verifier,
+      @Value("${jwt.issuer:https://as.localdev.codaline}") String expectedIssuer,
+      @Value("${jwt.audience:https://gateway.localdev.codaline}") String expectedAudience) {
+    return new JwtVerifier(verifier, expectedIssuer, expectedAudience);
+  }
+
+  @Bean
+  public FapiMtlsValidationFilter fapiMtlsValidationFilter(
+      @Value("${server.ssl.enabled:false}") boolean sslEnabled,
+      JwtVerifier jwtVerifier) {
+    return new FapiMtlsValidationFilter(sslEnabled, jwtVerifier);
   }
 
   private RSAPublicKey loadPublicKey(Resource resource)
