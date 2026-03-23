@@ -39,8 +39,10 @@ public class JwtVerifier {
 
   @PostConstruct
   public void init() throws GeneralSecurityException, IOException {
-    RSAPublicKey publicKey = loadPublicKey();
-    this.verifier = new RSASSAVerifier(publicKey);
+    if (this.verifier == null) {
+      RSAPublicKey publicKey = loadPublicKey();
+      this.verifier = new RSASSAVerifier(publicKey);
+    }
   }
 
   public Mono<JWTClaimsSet> verify(String token) {
