@@ -2,31 +2,54 @@ package br.com.codaline.reconciliation.batch;
 
 import br.com.codaline.reconciliation.domain.LedgerTransactionRepository;
 import br.com.codaline.reconciliation.domain.ReconciliationResult;
+import br.com.codaline.reconciliation.domain.ReconciliationRun;
 import br.com.codaline.reconciliation.domain.ReconciliationRunRepository;
 import br.com.codaline.reconciliation.domain.ReconciliationStatus;
+import org.springframework.batch.core.ExitStatus;
+import org.springframework.batch.core.StepExecution;
+import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ReconciliationProcessor implements
-    ItemProcessor<CipTransaction, ReconciliationResult> {
+    ItemProcessor<CipTransaction, ReconciliationResult>,
+    StepExecutionListener {
 
   private final LedgerTransactionRepository ledger;
-  private final ReconciliationRunRepository reconciliation;
+  private final ReconciliationRunRepository runRepository;
+
+  private ReconciliationRun currentRun;
 
   public ReconciliationProcessor(LedgerTransactionRepository ledger,
-      ReconciliationRunRepository reconciliation) {
+      ReconciliationRunRepository runRepository) {
     this.ledger = ledger;
-    this.reconciliation = reconciliation;
+    this.runRepository = runRepository;
   }
 
   @Override
-  public ReconciliationResult process(CipTransaction item) throws Exception {
+  public void beforeStep(StepExecution stepExecution) {
+    Long runId = stepExecution.getJobExecution()
+        .getExecutionContext()
+        .getLong("runId");
+
+    currentRun = runRepository.findById(runId)
+        .orElseThrow(() -> new IllegalStateException(
+            "ReconciliationRun not found for id: " + runId));
+  }
+
+  @Override
+  public ExitStatus afterStep(StepExecution stepExecution) {
+    return stepExecution.getExitStatus();
+  }
+
+  @Override
+  public ReconciliationResult process(CipTransaction item) {
     var ledgerTx = ledger.findByEndToEndId(item.endToEndId());
 
     if (ledgerTx.isEmpty()) {
       return new ReconciliationResult(
-          null,
+          currentRun,
           item.endToEndId(),
           item.debtorIspb(),
           item.creditorIspb(),
@@ -41,7 +64,7 @@ public class ReconciliationProcessor implements
         : ReconciliationStatus.AMOUNT_DIVERGENCE;
 
     return new ReconciliationResult(
-        null,
+        currentRun,
         item.endToEndId(),
         item.debtorIspb(),
         item.creditorIspb(),
