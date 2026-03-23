@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.core.Ordered;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -29,22 +30,22 @@ public class JtiReplayFilter implements GatewayFilter, Ordered {
     String expiresAt = exchange.getRequest().getHeaders().getFirst("X-Token-Exp");
 
     if (jti == null || jti.isBlank()) {
-      return reject(exchange, "Missing JTI claim");
+      return reject(exchange, HttpStatus.UNAUTHORIZED, "Missing JTI claim");
     }
 
     if (expiresAt == null || expiresAt.isBlank()) {
-      return reject(exchange, "Missing X-Token-Exp");
+      return reject(exchange, HttpStatus.UNAUTHORIZED, "Missing X-Token-Exp");
     }
 
     long ttl;
     try {
       ttl = Long.parseLong(expiresAt) - Instant.now().getEpochSecond();
     } catch (NumberFormatException e) {
-      return reject(exchange, "Invalid X-Token-Exp value");
+      return reject(exchange, HttpStatus.UNAUTHORIZED, "Invalid X-Token-Exp value");
     }
 
     if (ttl <= 0) {
-      return reject(exchange, "Token expired");
+      return reject(exchange, HttpStatus.UNAUTHORIZED, "Token expired");
     }
 
     return redisTemplate.opsForValue()
@@ -53,14 +54,20 @@ public class JtiReplayFilter implements GatewayFilter, Ordered {
           if (Boolean.TRUE.equals(isNew)) {
             return chain.filter(exchange);
           }
-          return reject(exchange, "Token already used (replay detected)");
+          return reject(exchange, HttpStatus.UNAUTHORIZED,
+              "Token already used (replay detected)");
+        })
+        .onErrorResume(DataAccessException.class, e -> {
+          log.error("Redis unavailable during JTI replay check: {}", e.getMessage());
+          return reject(exchange, HttpStatus.SERVICE_UNAVAILABLE,
+              "Service temporarily unavailable");
         });
   }
 
-  private Mono<Void> reject(ServerWebExchange exchange, String reason) {
+  private Mono<Void> reject(ServerWebExchange exchange, HttpStatus status, String reason) {
     return Mono.defer(() -> {
       log.warn("JTI rejected: {}", reason);
-      exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+      exchange.getResponse().setStatusCode(status);
       exchange.getResponse().getHeaders().add("X-Rejection-Reason", reason);
       return exchange.getResponse().setComplete();
     });

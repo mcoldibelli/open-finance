@@ -3,7 +3,6 @@ package br.com.codaline.gateway.filter;
 import br.com.codaline.gateway.consent.ConsentStatus;
 import br.com.codaline.gateway.consent.ConsentStore;
 import java.util.Optional;
-import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
@@ -59,13 +58,11 @@ public class ConsentValidationFilter implements GatewayFilter, Ordered {
   }
 
   private String resolvePermission(String path) {
-    Set<String> segments = Set.of(path.split("/"));
-
-    if (segments.contains("balances")) {
-      return "ACCOUNTS_BALANCES_READ";
-    }
-    if (segments.contains("transactions")) {
+    if (path.contains("/transactions")) {
       return "ACCOUNTS_TRANSACTIONS_READ";
+    }
+    if (path.contains("/balances")) {
+      return "ACCOUNTS_BALANCES_READ";
     }
     return "ACCOUNTS_READ";
   }
