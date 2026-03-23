@@ -61,6 +61,7 @@
     <module>config-server</module>
     <module>gateway-service</module>
     <module>accounts-service</module>
+    <module>reconciliation-service</module>
   </modules>
 
   <name>open-finance-gateway</name>

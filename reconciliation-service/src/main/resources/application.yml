@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: reconciliation-service
+  config:
+    import: "optional:configserver:http://localhost:8888"
+  profiles:
+    active: local
+  batch:
+    jdbc:
+      initialize-schema: embedded
+    job:
+      enabled: false
+
+reconciliation:
+  files:
+    input-path: ${RECONCILIATION_INPUT_PATH:./data/input}
