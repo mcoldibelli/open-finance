@@ -17,7 +17,7 @@ public class ReconciliationRun {
 
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
-  private long id;
+  private Long id;
   @Column(nullable = false, unique = true)
   private String fileReference;
   @Column(nullable = false)
@@ -45,7 +45,7 @@ public class ReconciliationRun {
     this.status = RunStatus.RUNNING;
   }
 
-  public long getId() {
+  public Long getId() {
     return id;
   }
 
@@ -63,6 +63,10 @@ public class ReconciliationRun {
 
   public LocalDateTime getFinishedAt() {
     return finishedAt;
+  }
+
+  public void setFinishedAt(LocalDateTime finishedAt) {
+    this.finishedAt = finishedAt;
   }
 
   public Integer getTotalRecords() {
