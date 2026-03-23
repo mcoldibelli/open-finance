@@ -2,6 +2,7 @@ package br.com.codaline.reconciliation.batch;
 
 import java.util.HashMap;
 import java.util.Map;
+import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.file.mapping.FieldSetMapper;
 import org.springframework.batch.item.file.mapping.PatternMatchingCompositeLineMapper;
@@ -25,6 +26,7 @@ public class CipFileReaderConfig {
   private static final Range AMOUNT = new Range(153, 168);
 
   @Bean
+  @StepScope
   public FlatFileItemReader<CipTransaction> cipFileReader(
       @Value("${reconciliation.files.input-path}") String inputPath) {
 

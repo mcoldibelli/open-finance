@@ -1,0 +1,26 @@
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      retries: 3
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+  jpa:
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 500
+        order_inserts: true
+        order_updates: true
+
+kafka:
+  topics:
+    divergences: reconciliation.divergences
+
+reconciliation:
+  files:
+    input-path: ${RECONCILIATION_INPUT_PATH:./data/input}
+  partition:
+    thread-pool-size: 4

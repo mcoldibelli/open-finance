@@ -1,8 +1,10 @@
 package br.com.codaline.reconciliation.batch;
 
+import br.com.codaline.reconciliation.domain.ReconciliationResultRepository;
 import br.com.codaline.reconciliation.domain.ReconciliationRun;
 import br.com.codaline.reconciliation.domain.ReconciliationRun.RunStatus;
 import br.com.codaline.reconciliation.domain.ReconciliationRunRepository;
+import br.com.codaline.reconciliation.domain.ReconciliationStatus;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import org.springframework.batch.core.BatchStatus;
@@ -14,9 +16,12 @@ import org.springframework.stereotype.Component;
 public class ReconciliationJobListener implements JobExecutionListener {
 
   private final ReconciliationRunRepository runRepository;
+  private final ReconciliationResultRepository resultRepository;
 
-  public ReconciliationJobListener(ReconciliationRunRepository runRepository) {
+  public ReconciliationJobListener(ReconciliationRunRepository runRepository,
+      ReconciliationResultRepository resultRepository) {
     this.runRepository = runRepository;
+    this.resultRepository = resultRepository;
   }
 
   @Override
@@ -35,6 +40,10 @@ public class ReconciliationJobListener implements JobExecutionListener {
     String fileReference = jobExecution.getJobParameters().getString("fileReference");
 
     runRepository.findByFileReference(fileReference).ifPresent(run -> {
+      run.setMatchedCount((int) resultRepository.countByRunAndStatus(run, ReconciliationStatus.MATCHED));
+      run.setDivergenceCount((int) resultRepository.countByRunAndStatus(run, ReconciliationStatus.AMOUNT_DIVERGENCE));
+      run.setMissingInLedgerCount((int) resultRepository.countByRunAndStatus(run, ReconciliationStatus.MISSING_IN_LEDGER));
+      run.setTotalRecords(run.getMatchedCount() + run.getDivergenceCount() + run.getMissingInLedgerCount());
       run.setFinishedAt(LocalDateTime.now());
       run.setStatus(
           jobExecution.getStatus() == BatchStatus.COMPLETED
@@ -43,6 +52,5 @@ public class ReconciliationJobListener implements JobExecutionListener {
       );
       runRepository.save(run);
     });
-
   }
 }

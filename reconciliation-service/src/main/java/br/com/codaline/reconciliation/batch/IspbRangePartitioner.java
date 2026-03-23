@@ -9,16 +9,20 @@ import org.springframework.stereotype.Component;
 @Component
 public class IspbRangePartitioner implements Partitioner {
 
+  private static final int ISPB_TOTAL = 10_000;
+
   @Override
   public Map<String, ExecutionContext> partition(int gridSize) {
-    Map<String, ExecutionContext> partitions = new HashMap<>();
+    if (gridSize <= 0) {
+      throw new IllegalArgumentException("gridSize must be positive, got: " + gridSize);
+    }
 
-    int total = 10_000;
-    int size = total / gridSize;
+    Map<String, ExecutionContext> partitions = new HashMap<>();
+    int size = ISPB_TOTAL / gridSize;
 
     for (int i = 0; i < gridSize; i++) {
       int start = i * size;
-      int end = (i == gridSize - 1) ? total - 1 : (i + 1) * size - 1;
+      int end = (i == gridSize - 1) ? ISPB_TOTAL - 1 : (i + 1) * size - 1;
 
       ExecutionContext ctx = new ExecutionContext();
       ctx.putInt("ispbStart", start);
