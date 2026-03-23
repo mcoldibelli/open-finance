@@ -8,6 +8,7 @@ import br.com.codaline.reconciliation.domain.ReconciliationStatus;
 import org.springframework.batch.core.ExitStatus;
 import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.StepExecutionListener;
+import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.stereotype.Component;
 
@@ -19,7 +20,7 @@ public class ReconciliationProcessor implements
   private final LedgerTransactionRepository ledger;
   private final ReconciliationRunRepository runRepository;
 
-  private ReconciliationRun currentRun;
+  private @StepScope ReconciliationRun currentRun;
 
   public ReconciliationProcessor(LedgerTransactionRepository ledger,
       ReconciliationRunRepository runRepository) {
@@ -44,7 +45,7 @@ public class ReconciliationProcessor implements
   }
 
   @Override
-  public ReconciliationResult process(CipTransaction item) {
+  public ReconciliationResult process(CipTransaction item) throws Exception {
     var ledgerTx = ledger.findByEndToEndId(item.endToEndId());
 
     if (ledgerTx.isEmpty()) {
