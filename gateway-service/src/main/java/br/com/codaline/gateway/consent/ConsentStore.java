@@ -20,9 +20,10 @@ public class ConsentStore {
   private static final String KEY_PREFIX = "consent:";
 
   private static final RedisScript<Boolean> SAVE_SCRIPT = RedisScript.of(
-      "redis.call('HSET', KEYS[1], 'consent_id', ARGV[1], 'status', ARGV[2], 'permissions'" +
-          ", ARGV[3], 'cpf', ARGV[4], 'client_id', ARGV[5]) redis.call('EXPIRE', KEYS[1], ARGV[6]) "
-          + "return true",
+      "redis.call('HSET', KEYS[1], 'consent_id', ARGV[1], 'status', ARGV[2], " +
+          "'permissions', ARGV[3], 'cpf', ARGV[4], 'client_id', ARGV[5])\n" +
+          "redis.call('EXPIRE', KEYS[1], ARGV[6])\n" +
+          "return true",
       Boolean.class
   );
 
@@ -62,7 +63,7 @@ public class ConsentStore {
     String permissionsRaw = fields.get("permissions");
 
     if (statusRaw == null || permissionsRaw == null) {
-      log.warn("Dados do consentimento corrompidos no Redis: status={}, permissions={}",
+      log.warn("Corrupted consent data in Redis: status={}, permissions={}",
           statusRaw, permissionsRaw);
       return Mono.empty();
     }
@@ -76,7 +77,7 @@ public class ConsentStore {
           fields.get("client_id")
       ));
     } catch (IllegalArgumentException e) {
-      log.warn("Status inválido no Redis: {}", statusRaw);
+      log.warn("Invalid consent status in Redis: {}", statusRaw);
       return Mono.empty();
     }
   }
