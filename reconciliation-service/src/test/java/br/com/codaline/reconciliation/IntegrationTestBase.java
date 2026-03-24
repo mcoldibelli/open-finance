@@ -30,6 +30,10 @@ public abstract class IntegrationTestBase {
     registry.add("spring.datasource.username", postgres::getUsername);
     registry.add("spring.datasource.password", postgres::getPassword);
     registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
+    registry.add("spring.kafka.producer.key-serializer",
+        () -> "org.apache.kafka.common.serialization.StringSerializer");
+    registry.add("spring.kafka.producer.value-serializer",
+        () -> "org.springframework.kafka.support.serializer.JsonSerializer");
     registry.add("spring.batch.jdbc.initialize-schema", () -> "always");
     registry.add("spring.batch.job.enabled", () -> "false");
     registry.add("spring.config.import", () -> "");
