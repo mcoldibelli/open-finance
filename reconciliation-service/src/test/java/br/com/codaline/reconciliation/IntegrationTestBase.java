@@ -22,7 +22,7 @@ public abstract class IntegrationTestBase {
 
   @Container
   static final KafkaContainer kafka =
-      new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.0"));
+      new KafkaContainer(DockerImageName.parse("apache/kafka:3.7.0"));
 
   @DynamicPropertySource
   static void containerProperties(DynamicPropertyRegistry registry) {
