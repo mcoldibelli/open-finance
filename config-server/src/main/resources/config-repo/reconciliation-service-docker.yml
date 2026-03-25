@@ -13,6 +13,10 @@ spring:
   kafka:
     bootstrap-servers: kafka-openfinance:9092
 
+  batch:
+    jdbc:
+      initialize-schema: never
+
 reconciliation:
   files:
     input-path: /data/input
