@@ -26,6 +26,6 @@ public class TestJwtConfig {
 
   @Bean
   public FapiMtlsValidationFilter fapiMtlsValidationFilter(JwtVerifier jwtVerifier) {
-    return new FapiMtlsValidationFilter(false, jwtVerifier);
+    return new FapiMtlsValidationFilter(false, true, jwtVerifier);
   }
 }

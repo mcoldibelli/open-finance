@@ -22,10 +22,13 @@ public class FapiMtlsValidationFilter implements GatewayFilter, Ordered {
 
   private static final Logger log = LoggerFactory.getLogger(FapiMtlsValidationFilter.class);
   private final boolean sslEnabled;
+  private final boolean trustProxyHeaders;
   private final JwtVerifier jwtVerifier;
 
-  public FapiMtlsValidationFilter(boolean sslEnabled, JwtVerifier jwtVerifier) {
+  public FapiMtlsValidationFilter(boolean sslEnabled, boolean trustProxyHeaders,
+      JwtVerifier jwtVerifier) {
     this.sslEnabled = sslEnabled;
+    this.trustProxyHeaders = trustProxyHeaders;
     this.jwtVerifier = jwtVerifier;
   }
 
@@ -66,6 +69,11 @@ public class FapiMtlsValidationFilter implements GatewayFilter, Ordered {
         return Optional.empty();
       }
       return Optional.of(CertificateThumbprint.computeS256(peerCertificates[0]));
+    }
+
+    if (!trustProxyHeaders) {
+      log.warn("SSL disabled and trust-proxy-headers=false - rejecting request");
+      return Optional.empty();
     }
 
     String headerThumbprint = exchange.getRequest().getHeaders().getFirst("X-Cert-Thumbprint");

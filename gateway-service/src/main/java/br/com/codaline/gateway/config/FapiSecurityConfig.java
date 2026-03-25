@@ -40,8 +40,9 @@ public class FapiSecurityConfig {
   @Bean
   public FapiMtlsValidationFilter fapiMtlsValidationFilter(
       @Value("${server.ssl.enabled:false}") boolean sslEnabled,
+      @Value("${gateway.trust-proxy-headers:false}") boolean trustProxyHeaders,
       JwtVerifier jwtVerifier) {
-    return new FapiMtlsValidationFilter(sslEnabled, jwtVerifier);
+    return new FapiMtlsValidationFilter(sslEnabled, trustProxyHeaders, jwtVerifier);
   }
 
   private RSAPublicKey loadPublicKey(Resource resource)
