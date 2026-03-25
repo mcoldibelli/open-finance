@@ -19,32 +19,28 @@ POST /jobs/reconciliation
   -> cria ReconciliationRun no banco
         |
         v
-  IspbRangePartitioner
-  -> divide 10.000 ISPBs em N ranges (default: 4)
+  Step 1 — Ingestao
+  cipFileReader (FlatFileItemReader) --chunk(500)--> StagingWriter (JdbcTemplate batchUpdate)
+  -> le CNAB240, insere na tabela staging_cip_transactions
         |
-        +----> Partition 0 (ISPB 0000-2499)
-        +----> Partition 1 (ISPB 2500-4999)
-        +----> Partition 2 (ISPB 5000-7499)
-        +----> Partition 3 (ISPB 7500-9999)
-                    |
-                    v (cada partição)
-              cipFileReader (FlatFileItemReader, @StepScope)
-                    |
-                    v
-              ReconciliationProcessor (@StepScope)
-              -> filtra por range ISPB
-              -> busca no ledger por endToEndId
-              -> classifica: MATCHED | AMOUNT_DIVERGENCE | MISSING_IN_LEDGER
-                    |
-                    v
-              CompositeItemWriter
-              |-> ReconciliationResultWriter (saveAll no banco)
-              |-> DivergenceKafkaWriter (publica divergências no Kafka)
-                    |
-                    v
+        v
+  Step 2 — Reconciliacao
+  ReconciliationTasklet
+  -> INSERT INTO reconciliation_results ... SELECT ... LEFT JOIN ledger_transactions
+  -> 1 unica query SQL cruza staging com ledger e classifica os resultados
+        |
+        v
+  Step 3 — Publicacao
+  JpaPagingItemReader (results divergentes) --chunk(100)--> DivergenceKafkaWriter
+  -> publica divergencias (AMOUNT_DIVERGENCE, MISSING_IN_LEDGER) no Kafka
+        |
+        v
   ReconciliationJobListener.afterJob()
   -> agrega contadores no ReconciliationRun
+  -> limpa staging_cip_transactions do run
 ```
+
+Decisao arquitetural documentada em [ADR-001](../docs/adr/001-staging-table-reconciliation.md).
 
 ---
 
@@ -54,7 +50,7 @@ POST /jobs/reconciliation
 |------------------------|--------------------------|-------------------------------------------------------------------------------------------------------------------|
 | Java 21 (LTS)         | Linguagem                | LTS com suporte estendido, records para DTOs imutaveis, virtual threads disponiveis                               |
 | Spring Boot 3.4.5     | Framework                | Auto-configuracao, ecosystem maduro, ProblemDetail nativo (RFC 7807)                                              |
-| Spring Batch 5         | Motor de processamento   | Chunk-oriented processing, particionamento nativo, restart/retry, spring-batch-test                               |
+| Spring Batch 5         | Motor de processamento   | Chunk-oriented processing para ingestao, tasklet para reconciliacao SQL, restart/retry por step                   |
 | Spring Data JPA        | Persistencia             | Abstracao sobre Hibernate, batch insert com `hibernate.jdbc.batch_size=500`                                       |
 | PostgreSQL 16          | Banco de dados           | ACID compliant, `NUMERIC(15,2)` para valores monetarios, partial indexes                                         |
 | Apache Kafka 3.7       | Mensageria assincrona    | Pub/sub para divergencias, ordering por `endToEndId` (partition key), retencao configuravel                       |
@@ -67,60 +63,36 @@ POST /jobs/reconciliation
 
 ## Decisoes de design
 
-### Por que chunk-oriented e nao processar linha por linha
+### Por que staging table + SQL JOIN e nao lookup por item
 
-**Problema:** Arquivos CNAB da CIP podem ter centenas de milhares de linhas. Processar uma por uma significa um INSERT por linha, ou seja, N roundtrips ao banco de dados.
+**Problema:** A abordagem anterior usava `ItemProcessor` com 1 SELECT por transacao (`findByEndToEndId`). Com 500K transacoes, sao 500K roundtrips ao banco. Alem disso, o particionamento por ISPB lia o arquivo N vezes.
 
-**Solucao:** Spring Batch chunk processing com `chunk size = 500` (configurado em `ReconciliationJobConfig`).
+**Solucao:** Ingestao em tabela staging + reconciliacao via `INSERT INTO ... SELECT ... LEFT JOIN`.
 
-**Por que:** O processamento por chunks agrupa as escritas no banco (`saveAll` em vez de `save` em loop), controla os limites transacionais por chunk, e habilita retry/skip no nivel do chunk. Com chunks de 500 + `hibernate.jdbc.batch_size=500`, o Hibernate agrupa todos os INSERTs em um unico JDBC batch, fazendo flush em um unico roundtrip para ate 500 linhas. Linha por linha seria 1 INSERT = 1 roundtrip = performance inviavel para arquivos grandes.
+**Por que:** A reconciliacao e fundamentalmente um JOIN entre dois datasets. O PostgreSQL resolve isso nativamente com hash join ou merge join, utilizando indices e paralelismo de query. Um unico `LEFT JOIN` indexado substitui N SELECTs individuais. O arquivo e lido uma unica vez (step de ingestao), e a reconciliacao e uma unica query atomica. Decisao documentada em [ADR-001](../docs/adr/001-staging-table-reconciliation.md).
 
-```java
-// ReconciliationJobConfig.java — definicao do chunk size
-return new StepBuilder("reconciliationStep", jobRepository)
-    .<CipTransaction, ReconciliationResult>chunk(500, transactionManager)
-    .reader(reader)
-    .processor(processor)
-    .writer(compositeWriter)
-    .build();
+```sql
+-- ReconciliationTasklet.java — reconciliacao em uma unica query
+INSERT INTO reconciliation_results (...)
+SELECT s.run_id, s.end_to_end_id, s.debtor_ispb, s.creditor_ispb,
+       s.amount, l.amount,
+       CASE
+           WHEN l.end_to_end_id IS NULL THEN 'MISSING_IN_LEDGER'
+           WHEN s.amount <> l.amount    THEN 'AMOUNT_DIVERGENCE'
+           ELSE 'MATCHED'
+       END, NOW()
+FROM staging_cip_transactions s
+LEFT JOIN ledger_transactions l ON s.end_to_end_id = l.end_to_end_id
+WHERE s.run_id = ?
 ```
 
-### Por que particionamento por ISPB e nao por linha do arquivo
+### Por que 3 steps sequenciais e nao particionamento
 
-**Problema:** Arquivos grandes exigem processamento paralelo. Dividir por linha do arquivo causaria contencao de escrita quando threads diferentes processam transacoes do mesmo ISPB.
+**Problema:** O particionamento por ISPB multiplicava I/O (arquivo lido 4x) e adicionava complexidade com `@StepScope`, thread pools e `ExecutionContext` por particao.
 
-**Solucao:** `IspbRangePartitioner` divide os 10.000 ISPBs possiveis em 4 ranges (configuravel via `reconciliation.partition.thread-pool-size`).
+**Solucao:** 3 steps sequenciais — ingestao (chunk), reconciliacao (tasklet), publicacao (chunk).
 
-**Por que:** ISPB (Identificador do Sistema de Pagamentos Brasileiro) e o codigo atribuido pelo BCB a cada instituicao participante do SPB. Particionar por ISPB garante que cada thread processa um conjunto disjunto de transacoes. Nao ha contencao de lock nas escritas — cada particao grava `endToEndId`s diferentes. Particionamento por linha exigiria leitura com acesso aleatorio ao arquivo ou splitting, e ainda assim arriscaria contencao de escrita em ISPBs sobrepostos.
-
-```java
-// IspbRangePartitioner.java
-// Partition 0: ISPB 0000-2499
-// Partition 1: ISPB 2500-4999
-// Partition 2: ISPB 5000-7499
-// Partition 3: ISPB 7500-9999
-int size = ISPB_TOTAL / gridSize; // 10_000 / 4 = 2500
-```
-
-### Por que @StepScope e obrigatorio com particionamento
-
-**Problema:** `ReconciliationProcessor` possui estado mutavel (`currentRun`, `ispbStart`, `ispbEnd`) que varia por particao. Sem escopo adequado, Spring cria um singleton compartilhado entre threads.
-
-**Solucao:** `@StepScope` cria uma nova instancia por execucao de step.
-
-**Por que:** Sem `@StepScope`, o Spring cria um singleton. Com 4 threads escrevendo nos mesmos campos `ispbStart`/`ispbEnd`, ocorre race condition. `@StepScope` garante que cada thread de particao recebe sua propria instancia com seus proprios valores do `ExecutionContext`. O mesmo se aplica ao `cipFileReader` — cada particao precisa de sua propria posicao de cursor no arquivo.
-
-```java
-@Component
-@StepScope  // sem isso: 4 threads, 1 instância, race condition
-public class ReconciliationProcessor implements
-    ItemProcessor<CipTransaction, ReconciliationResult>,
-    StepExecutionListener {
-
-  private ReconciliationRun currentRun; // estado por particao
-  private int ispbStart;                // vem do ExecutionContext
-  private int ispbEnd;                  // vem do ExecutionContext
-```
+**Por que:** O gargalo real era o N+1 queries no banco, nao a falta de paralelismo no Java. O PostgreSQL paraleliza queries internamente quando necessario. Com o JOIN no banco, o processamento e mais rapido com 1 thread + 1 query do que com 4 threads + 4 leituras de arquivo. Cada step tem responsabilidade unica e falha de forma isolada — se o Kafka cair, apenas o step 3 e re-executado.
 
 ### Por que setIfAbsent e nao hasKey + set no Redis
 
@@ -130,58 +102,37 @@ public class ReconciliationProcessor implements
 
 **Por que:** `hasKey` + `set` sao duas operacoes separadas. Entre o check e o set, outra requisicao pode passar (race condition window). `SETNX` e uma unica operacao atomica: se a key existe, retorna `false`; se nao, seta e retorna `true`. Tanto o anti-replay de JTI (gateway) quanto a idempotencia por `fileReference` (reconciliacao) usam esse mesmo pattern porque o problema e identico: check-and-claim atomico.
 
-### Por que saveAll e nao save em loop
+### Por que JdbcTemplate no staging e nao JPA
 
-**Problema:** Gravar resultados da reconciliacao no banco de dados. Um loop de `save()` executa N INSERT statements individuais com N roundtrips.
+**Problema:** Inserir centenas de milhares de linhas do CNAB na tabela staging.
 
-**Solucao:** `ReconciliationResultWriter` usa `repository.saveAll(chunk.getItems())`.
+**Solucao:** `StagingWriter` usa `JdbcTemplate.batchUpdate` com `BatchPreparedStatementSetter`.
 
-**Por que:** Com `hibernate.jdbc.batch_size=500` e `order_inserts=true` (ambos configurados no `application.yml`), o Hibernate agrupa os INSERTs em um unico JDBC batch. `saveAll()` com batch config: 1 roundtrip para ate 500 linhas. Isso e critico para performance ao processar arquivos com 100k+ transacoes.
+**Por que:** A tabela staging e transiente — nao precisa de ciclo de vida JPA (dirty checking, cache L1, cascades). `JdbcTemplate.batchUpdate` envia N INSERTs em um unico roundtrip JDBC, sem overhead de entity manager. Para dados que serao descartados apos o job, JDBC puro e a escolha correta.
 
-```yaml
-# application.yml
-spring:
-  jpa:
-    properties:
-      hibernate:
-        jdbc:
-          batch_size: 500
-        order_inserts: true
-        order_updates: true
-```
+### Por que o JobListener cria o run no beforeJob e limpa staging no afterJob
 
-### Por que o JobListener cria o ReconciliationRun no beforeJob e nao no beforeStep
+**Problema:** O `runId` precisa existir antes do step de ingestao (para o FK na staging), e a staging precisa ser limpa apos a conclusao.
 
-**Problema:** A execucao precisa ser rastreada como um unico `ReconciliationRun`. Criar no `beforeStep` criaria multiplos runs para o mesmo arquivo.
+**Solucao:** `beforeJob` cria o `ReconciliationRun` e armazena `runId` no `ExecutionContext`. `afterJob` agrega contadores e executa `DELETE FROM staging_cip_transactions WHERE run_id = ?`.
 
-**Solucao:** `ReconciliationJobListener.beforeJob` cria a entidade `ReconciliationRun` e armazena o ID no `JobExecution.executionContext`.
-
-**Por que:** Um job particionado tem 1 Job com N Steps (um por particao). Criar no `beforeStep` geraria N runs para o mesmo arquivo. `beforeJob` executa uma unica vez, cria um unico run, e todas as particoes acessam o mesmo `runId` via `JobExecution.executionContext` compartilhado. O `afterJob` entao agrega os contadores de todas as particoes nesse unico run.
-
-```java
-// ReconciliationJobListener.java
-@Override
-public void beforeJob(JobExecution jobExecution) {
-    var run = new ReconciliationRun(fileReference, LocalDate.now());
-    var saved = runRepository.save(run);
-    jobExecution.getExecutionContext().putLong("runId", saved.getId());
-    // todas as particoes leem "runId" do executionContext do Job
-}
-```
+**Por que:** O `beforeJob` executa uma unica vez antes de todos os steps, garantindo que o `runId` esta disponivel para ingestao, reconciliacao e publicacao. O cleanup no `afterJob` garante que dados staging nao acumulam — mesmo em caso de falha, o proximo run nao e afetado por dados residuais.
 
 ### Por que compareTo e nao equals para BigDecimal
 
 **Problema:** Comparar valores monetarios do arquivo CIP (CNAB) com valores do ledger. `BigDecimal.equals()` compara valor E escala, causando falsos negativos.
 
-**Solucao:** `item.amount().compareTo(ledgerAmount) == 0`.
+**Solucao:** Na query SQL, `s.amount <> l.amount` (operador `<>` do PostgreSQL para `NUMERIC`).
 
-**Por que:** `BigDecimal.equals()` compara valor **e** escala: `new BigDecimal("100.50").equals(new BigDecimal("100.5"))` retorna `false`. `compareTo()` compara apenas o valor numerico: retorna `0` para valores iguais independente da escala. Valores do CNAB vem em centavos (`movePointLeft(2)` resulta em escala 2) enquanto valores do ledger podem ter escala diferente. Para comparacoes monetarias, `compareTo == 0` e a abordagem correta.
+**Por que:** `BigDecimal.equals()` em Java compara valor **e** escala: `new BigDecimal("100.50").equals(new BigDecimal("100.5"))` retorna `false`. No PostgreSQL, `NUMERIC` nao tem esse problema — `100.50 <> 100.5` avalia corretamente como `false` (valores iguais). Ao mover a comparacao para SQL, eliminamos esse risco. O `CipTransactionFieldSetMapper` continua usando `movePointLeft(2)` para converter centavos em reais antes do INSERT na staging.
 
-```java
-// ReconciliationProcessor.java
-var status = item.amount().compareTo(ledgerAmount) == 0
-    ? ReconciliationStatus.MATCHED
-    : ReconciliationStatus.AMOUNT_DIVERGENCE;
+```sql
+-- ReconciliationTasklet.java
+CASE
+    WHEN l.end_to_end_id IS NULL THEN 'MISSING_IN_LEDGER'
+    WHEN s.amount <> l.amount    THEN 'AMOUNT_DIVERGENCE'
+    ELSE 'MATCHED'
+END
 ```
 
 ---
@@ -346,4 +297,4 @@ Os testes de integracao estendem `IntegrationTestBase`, que configura containers
 - [ ] Dashboard de monitoramento de runs (metricas do Spring Batch Actuator)
 - [ ] Alertas quando `divergenceRate > threshold` configuravel
 - [ ] Endpoint `GET /jobs/reconciliation/{fileReference}` para consultar status do run
-- [ ] `MISSING_IN_CIP`: transacoes no ledger que nao existem no arquivo CIP (requer segundo step)
+- [ ] `MISSING_IN_CIP`: transacoes no ledger que nao existem no arquivo CIP (adicionar RIGHT JOIN no `ReconciliationTasklet`)

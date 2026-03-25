@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobExecutionListener;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -17,11 +18,13 @@ public class ReconciliationJobListener implements JobExecutionListener {
 
   private final ReconciliationRunRepository runRepository;
   private final ReconciliationResultRepository resultRepository;
+  private final JdbcTemplate jdbcTemplate;
 
   public ReconciliationJobListener(ReconciliationRunRepository runRepository,
-      ReconciliationResultRepository resultRepository) {
+      ReconciliationResultRepository resultRepository, JdbcTemplate jdbcTemplate) {
     this.runRepository = runRepository;
     this.resultRepository = resultRepository;
+    this.jdbcTemplate = jdbcTemplate;
   }
 
   @Override
@@ -40,10 +43,14 @@ public class ReconciliationJobListener implements JobExecutionListener {
     String fileReference = jobExecution.getJobParameters().getString("fileReference");
 
     runRepository.findByFileReference(fileReference).ifPresent(run -> {
-      run.setMatchedCount((int) resultRepository.countByRunAndStatus(run, ReconciliationStatus.MATCHED));
-      run.setDivergenceCount((int) resultRepository.countByRunAndStatus(run, ReconciliationStatus.AMOUNT_DIVERGENCE));
-      run.setMissingInLedgerCount((int) resultRepository.countByRunAndStatus(run, ReconciliationStatus.MISSING_IN_LEDGER));
-      run.setTotalRecords(run.getMatchedCount() + run.getDivergenceCount() + run.getMissingInLedgerCount());
+      run.setMatchedCount(
+          (int) resultRepository.countByRunAndStatus(run, ReconciliationStatus.MATCHED));
+      run.setDivergenceCount(
+          (int) resultRepository.countByRunAndStatus(run, ReconciliationStatus.AMOUNT_DIVERGENCE));
+      run.setMissingInLedgerCount(
+          (int) resultRepository.countByRunAndStatus(run, ReconciliationStatus.MISSING_IN_LEDGER));
+      run.setTotalRecords(
+          run.getMatchedCount() + run.getDivergenceCount() + run.getMissingInLedgerCount());
       run.setFinishedAt(LocalDateTime.now());
       run.setStatus(
           jobExecution.getStatus() == BatchStatus.COMPLETED
@@ -51,6 +58,7 @@ public class ReconciliationJobListener implements JobExecutionListener {
               : RunStatus.FAILED
       );
       runRepository.save(run);
+      jdbcTemplate.update("DELETE FROM staging_cip_transactions WHERE run_id = ?", run.getId());
     });
   }
 }

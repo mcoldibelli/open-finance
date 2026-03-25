@@ -1,5 +1,6 @@
 package br.com.codaline.reconciliation.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -29,6 +30,7 @@ public class ReconciliationResult {
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
 
+  @JsonIgnore
   @ManyToOne(fetch = FetchType.LAZY)
   @JoinColumn(name = "run_id", nullable = false)
   private ReconciliationRun run;
@@ -74,6 +76,10 @@ public class ReconciliationResult {
 
   public ReconciliationRun getRun() {
     return run;
+  }
+
+  public Long getRunId() {
+    return run != null ? run.getId() : null;
   }
 
   public String getEndToEndId() {

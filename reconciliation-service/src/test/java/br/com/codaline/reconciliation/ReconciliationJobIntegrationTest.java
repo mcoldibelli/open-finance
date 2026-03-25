@@ -22,6 +22,7 @@ import org.springframework.batch.core.JobParametersBuilder;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
@@ -63,6 +64,9 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
   @Autowired
   private LedgerTransactionRepository ledgerRepository;
 
+  @Autowired
+  private JdbcTemplate jdbcTemplate;
+
   @BeforeEach
   void setUp() {
     resultRepository.deleteAll();
@@ -71,7 +75,7 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
   }
 
   @Test
-  void dado_arquivoComTransacoesVariadas_quando_executarJob_entao_reconciliaCorretamente()
+  void given_fileWithMixedTransactions_when_runJob_then_reconcilesCorrectly()
       throws Exception {
     // Arrange
     String fileReference = "CNAB_2026-03-24_VARIADAS";
@@ -120,10 +124,15 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
     assertThat(run.get().getTotalRecords()).isEqualTo(3);
 
     assertThat(resultRepository.count()).isEqualTo(3);
+
+    // staging must be cleaned up after job
+    Long stagingCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM staging_cip_transactions", Long.class);
+    assertThat(stagingCount).isZero();
   }
 
   @Test
-  void dado_arquivoSemTransacoes_quando_executarJob_entao_completaSemResultados() throws Exception {
+  void given_fileWithNoTransactions_when_runJob_then_completesWithNoResults() throws Exception {
     // Arrange
     String fileReference = "CNAB_2026-03-24_VAZIO";
     String cnabContent = CnabFileBuilder.buildHeaderLine() + "\n"
