@@ -83,8 +83,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
     webTestClient.get()
         .uri("/open-banking/accounts/v2")
         .exchange()
-        .expectStatus().isUnauthorized()
-        .expectHeader().exists("X-Rejection-Reason");
+        .expectStatus().isUnauthorized();
   }
 
   @Test
@@ -107,9 +106,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
         .header("Authorization", "Bearer " + jwt.serialize())
         .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
         .exchange()
-        .expectStatus().isUnauthorized()
-        .expectHeader().valueEquals("X-Rejection-Reason",
-            "Token missing cnf.x5t#S256 claim");
+        .expectStatus().isUnauthorized();
   }
 
   @Test
@@ -130,9 +127,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
         .header("Authorization", "Bearer " + validToken)
         .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
         .exchange()
-        .expectStatus().isForbidden()
-        .expectHeader().value("X-Rejection-Reason", reason ->
-            assertThat(reason).contains("Permission ACCOUNTS_TRANSACTIONS_READ not granted"));
+        .expectStatus().isForbidden();
   }
 
   @Test

@@ -15,7 +15,6 @@ public final class FilterResponseUtils {
     return Mono.defer(() -> {
       log.warn("Request rejected: {}", reason);
       exchange.getResponse().setStatusCode(status);
-      exchange.getResponse().getHeaders().add("X-Rejection-Reason", reason);
       return exchange.getResponse().setComplete();
     });
   }
