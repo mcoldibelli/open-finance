@@ -10,6 +10,7 @@ import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
@@ -17,6 +18,7 @@ import reactor.core.publisher.Mono;
 public class ConsentValidationFilter implements GatewayFilter, Ordered {
 
   private static final Logger log = LoggerFactory.getLogger(ConsentValidationFilter.class);
+  private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
   private final ConsentStore consentStore;
 
   public ConsentValidationFilter(ConsentStore consentStore) {
@@ -58,22 +60,19 @@ public class ConsentValidationFilter implements GatewayFilter, Ordered {
   }
 
   private String resolvePermission(String path) {
-    if (path.contains("/transactions")) {
+    if (PATH_MATCHER.match("/**/transactions/**", path)
+        || PATH_MATCHER.match("/**/transactions", path)) {
       return "ACCOUNTS_TRANSACTIONS_READ";
     }
-    if (path.contains("/balances")) {
+    if (PATH_MATCHER.match("/**/balances/**", path)
+        || PATH_MATCHER.match("/**/balances", path)) {
       return "ACCOUNTS_BALANCES_READ";
     }
     return "ACCOUNTS_READ";
   }
 
   private Mono<Void> reject(ServerWebExchange exchange, HttpStatus status, String reason) {
-    return Mono.defer(() -> {
-      log.warn("Consent rejected: {}", reason);
-      exchange.getResponse().setStatusCode(status);
-      exchange.getResponse().getHeaders().add("X-Rejection-Reason", reason);
-      return exchange.getResponse().setComplete();
-    });
+    return FilterResponseUtils.reject(exchange, status, reason, log);
   }
 
   @Override
