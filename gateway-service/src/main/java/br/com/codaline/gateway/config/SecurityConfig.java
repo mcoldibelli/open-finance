@@ -7,7 +7,7 @@ import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 
 /**
- * Gateway's ecurity config. Authentication and Authorization is made by custom FAPI filters
+ * Gateway's security config. Authentication and Authorization is made by custom FAPI filters
  * (FapiMtlsValidationFilter + ConsentValidationFilter). Spring Security conflicting settings
  * disabled to use FAPI pipeline FAPI.
  */
@@ -22,7 +22,10 @@ public class SecurityConfig {
         .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
         .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
         .logout(ServerHttpSecurity.LogoutSpec::disable)
-        .authorizeExchange(exchanges -> exchanges.anyExchange().permitAll())
+        .authorizeExchange(exchanges -> exchanges
+            .pathMatchers("/actuator/health", "/actuator/info").permitAll()
+            .pathMatchers("/actuator/**").denyAll()
+            .anyExchange().permitAll())
         .build();
   }
 }
