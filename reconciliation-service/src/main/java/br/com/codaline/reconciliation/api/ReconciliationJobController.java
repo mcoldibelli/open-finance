@@ -2,7 +2,7 @@ package br.com.codaline.reconciliation.api;
 
 import br.com.codaline.reconciliation.domain.ReconciliationRunRepository;
 import jakarta.validation.Valid;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.Job;
@@ -25,13 +25,16 @@ public class ReconciliationJobController {
   private final JobLauncher jobLauncher;
   private final Job reconciliationJob;
   private final ReconciliationRunRepository runRepository;
+  private final ExecutorService jobExecutor;
 
   public ReconciliationJobController(JobLauncher jobLauncher,
       @Qualifier("reconciliationJob") Job reconciliationJob,
-      ReconciliationRunRepository runRepository) {
+      ReconciliationRunRepository runRepository,
+      ExecutorService jobExecutor) {
     this.jobLauncher = jobLauncher;
     this.reconciliationJob = reconciliationJob;
     this.runRepository = runRepository;
+    this.jobExecutor = jobExecutor;
   }
 
   @PostMapping("/reconciliation")
@@ -46,11 +49,11 @@ public class ReconciliationJobController {
         .addString("fileReference", request.fileReference())
         .toJobParameters();
 
-    CompletableFuture.runAsync(() -> {
+    jobExecutor.execute(() -> {
       try {
         jobLauncher.run(reconciliationJob, params);
-      } catch (Exception ex) {
-        log.error("Job execution failed for file: {}", request.fileReference(), ex);
+      } catch (Exception e) {
+        log.error("Job execution failed for file: {}", request.fileReference(), e);
       }
     });
 
