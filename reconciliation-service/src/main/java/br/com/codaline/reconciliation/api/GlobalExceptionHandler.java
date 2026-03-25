@@ -1,6 +1,7 @@
 package br.com.codaline.reconciliation.api;
 
 import java.net.URI;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -17,6 +18,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     problem.setTitle("Duplicate job");
     problem.setType(URI.create("about:blank"));
     problem.setProperty("fileReference", ex.getFileReference());
+    return problem;
+  }
+
+  @ExceptionHandler(DataIntegrityViolationException.class)
+  public ProblemDetail handleDataIntegrity(DataIntegrityViolationException ex) {
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+        HttpStatus.CONFLICT, "Job already exists for this file reference");
+    problem.setTitle("Duplicate job");
+    problem.setType(URI.create("about:blank"));
     return problem;
   }
 
