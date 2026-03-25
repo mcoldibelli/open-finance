@@ -1,5 +1,6 @@
 package br.com.codaline.reconciliation.api;
 
+import br.com.codaline.reconciliation.domain.ReconciliationRunRepository;
 import jakarta.validation.Valid;
 import java.util.concurrent.CompletableFuture;
 import org.slf4j.Logger;
@@ -23,16 +24,23 @@ public class ReconciliationJobController {
 
   private final JobLauncher jobLauncher;
   private final Job reconciliationJob;
+  private final ReconciliationRunRepository runRepository;
 
   public ReconciliationJobController(JobLauncher jobLauncher,
-      @Qualifier("reconciliationJob") Job reconciliationJob) {
+      @Qualifier("reconciliationJob") Job reconciliationJob,
+      ReconciliationRunRepository runRepository) {
     this.jobLauncher = jobLauncher;
     this.reconciliationJob = reconciliationJob;
+    this.runRepository = runRepository;
   }
 
   @PostMapping("/reconciliation")
   public ResponseEntity<JobLaunchResponse> launchReconciliation(
       @Valid @RequestBody JobLaunchRequest request) {
+
+    if (runRepository.findByFileReference(request.fileReference()).isPresent()) {
+      throw new DuplicateJobException(request.fileReference());
+    }
 
     JobParameters params = new JobParametersBuilder()
         .addString("fileReference", request.fileReference())
