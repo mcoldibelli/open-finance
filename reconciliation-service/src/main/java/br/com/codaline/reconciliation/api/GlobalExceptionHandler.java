@@ -14,7 +14,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   public ProblemDetail handleDuplicateJob(DuplicateJobException ex) {
     ProblemDetail problem = ProblemDetail.forStatusAndDetail(
         HttpStatus.CONFLICT, ex.getMessage());
-    problem.setTitle("Job duplicado");
+    problem.setTitle("Duplicate job");
     problem.setType(URI.create("about:blank"));
     problem.setProperty("fileReference", ex.getFileReference());
     return problem;
@@ -23,8 +23,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   @ExceptionHandler(Exception.class)
   public ProblemDetail handleGenericException(Exception ex) {
     ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-        HttpStatus.INTERNAL_SERVER_ERROR, "Erro interno ao processar requisição");
-    problem.setTitle("Erro interno");
+        HttpStatus.INTERNAL_SERVER_ERROR, "Internal error while processing request");
+    problem.setTitle("Internal error");
     problem.setType(URI.create("about:blank"));
     return problem;
   }

@@ -50,11 +50,11 @@ public class ReconciliationJobController {
       try {
         jobLauncher.run(reconciliationJob, params);
       } catch (Exception ex) {
-        log.error("Falha na execução do job para arquivo: {}", request.fileReference(), ex);
+        log.error("Job execution failed for file: {}", request.fileReference(), ex);
       }
     });
 
-    log.info("Job de reconciliação aceito para arquivo: {}", request.fileReference());
+    log.info("Reconciliation job accepted for file: {}", request.fileReference());
     return ResponseEntity.accepted().body(JobLaunchResponse.accepted(request.fileReference()));
   }
 }

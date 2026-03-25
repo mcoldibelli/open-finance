@@ -13,7 +13,7 @@ public class CipTransactionFieldSetMapper implements FieldSetMapper<CipTransacti
 
     if (rawAmount.isEmpty() || !rawAmount.matches("\\d+")) {
       throw new IllegalArgumentException(
-          "Campo 'amount' inválido: '" + rawAmount + "'. Esperado: valor numérico representando centavos");
+          "Invalid 'amount' field: '" + rawAmount + "'. Expected: numeric value representing cents");
     }
 
     return new CipTransaction(

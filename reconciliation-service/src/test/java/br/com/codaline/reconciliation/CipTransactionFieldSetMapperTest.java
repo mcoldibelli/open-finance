@@ -17,7 +17,7 @@ class CipTransactionFieldSetMapperTest {
   private final CipTransactionFieldSetMapper mapper = new CipTransactionFieldSetMapper();
 
   @Test
-  void dado_fieldSetValido_quando_mapear_entao_converteAmountParaReais() throws Exception {
+  void given_validFieldSet_when_map_then_convertsAmountToReais() throws Exception {
     FieldSet fieldSet = new DefaultFieldSet(
         new String[]{"E0000000100000123456", "ISPB0001", "ISPB0002", "0000000000010050"},
         FIELD_NAMES);
@@ -31,7 +31,7 @@ class CipTransactionFieldSetMapperTest {
   }
 
   @Test
-  void dado_amountVazio_quando_mapear_entao_lancaExcecao() {
+  void given_emptyAmount_when_map_then_throwsException() {
     FieldSet fieldSet = new DefaultFieldSet(
         new String[]{"E0000000100000123456", "ISPB0001", "ISPB0002", "   "},
         FIELD_NAMES);
@@ -42,7 +42,7 @@ class CipTransactionFieldSetMapperTest {
   }
 
   @Test
-  void dado_amountComCaracteresNaoNumericos_quando_mapear_entao_lancaExcecao() {
+  void given_amountWithNonNumericChars_when_map_then_throwsException() {
     FieldSet fieldSet = new DefaultFieldSet(
         new String[]{"E0000000100000123456", "ISPB0001", "ISPB0002", "ABC12345"},
         FIELD_NAMES);

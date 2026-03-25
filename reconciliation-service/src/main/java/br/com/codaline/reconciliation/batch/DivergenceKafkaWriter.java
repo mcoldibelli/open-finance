@@ -36,7 +36,7 @@ public class DivergenceKafkaWriter implements ItemWriter<ReconciliationResult> {
     kafkaTemplate.send(topic, result.getEndToEndId(), result)
         .whenComplete((sendResult, ex) -> {
           if (ex != null) {
-            log.error("Falha ao publicar divergência no Kafka: endToEndId={}, status={}",
+            log.error("Failed to publish divergence to Kafka: endToEndId={}, status={}",
                 result.getEndToEndId(), result.getStatus(), ex);
           }
         });

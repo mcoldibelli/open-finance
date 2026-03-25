@@ -21,7 +21,7 @@ class CipFileReaderTest {
   Path tempDir;
 
   @Test
-  void dado_arquivoComDuasTransacoes_quando_ler_entao_retornaAmbasComValoresCorretos() throws Exception {
+  void given_fileWithTwoTransactions_when_read_then_returnsBothWithCorrectValues() throws Exception {
     Path file = tempDir.resolve("test.txt");
     String content = CnabFileBuilder.buildHeaderLine() + "\n"
         + CnabFileBuilder.buildSegmentALine("E0000000100000123456", "ISPB0001", "ISPB0002", "0000000000010050") + "\n"
@@ -43,7 +43,7 @@ class CipFileReaderTest {
   }
 
   @Test
-  void dado_arquivoComApenasHeader_quando_ler_entao_retornaListaVazia() throws Exception {
+  void given_fileWithOnlyHeader_when_read_then_returnsEmptyList() throws Exception {
     Path file = tempDir.resolve("empty.txt");
     Files.writeString(file, CnabFileBuilder.buildHeaderLine() + "\n");
 
@@ -53,7 +53,7 @@ class CipFileReaderTest {
   }
 
   @Test
-  void dado_transacaoComAmountZerado_quando_ler_entao_retornaBigDecimalZero() throws Exception {
+  void given_transactionWithZeroAmount_when_read_then_returnsBigDecimalZero() throws Exception {
     Path file = tempDir.resolve("zero.txt");
     String content = CnabFileBuilder.buildHeaderLine() + "\n"
         + CnabFileBuilder.buildSegmentALine("E0000000100000000000", "ISPB0001", "ISPB0002", "0000000000000000") + "\n";

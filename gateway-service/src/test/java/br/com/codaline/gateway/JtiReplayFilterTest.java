@@ -50,8 +50,8 @@ class JtiReplayFilterTest extends IntegrationTestBase {
   }
 
   @Test
-  void dado_mesmoToken_quando_replayAttack_entao_retorna401() throws JOSEException {
-    String token = TestUtils.gerarToken(UUID.randomUUID().toString());
+  void given_sameToken_when_replayAttack_then_returns401() throws JOSEException {
+    String token = TestUtils.generateToken(UUID.randomUUID().toString());
 
     webTestClient.get()
         .uri("/open-banking/accounts/v2")
@@ -72,9 +72,9 @@ class JtiReplayFilterTest extends IntegrationTestBase {
   }
 
   @Test
-  void dado_tokensDistintos_quando_requests_entao_ambosPassam() throws JOSEException {
-    String token = TestUtils.gerarToken(UUID.randomUUID().toString());
-    String token2 = TestUtils.gerarToken(UUID.randomUUID().toString());
+  void given_distinctTokens_when_requests_then_bothPass() throws JOSEException {
+    String token = TestUtils.generateToken(UUID.randomUUID().toString());
+    String token2 = TestUtils.generateToken(UUID.randomUUID().toString());
 
     webTestClient.get()
         .uri("/open-banking/accounts/v2")

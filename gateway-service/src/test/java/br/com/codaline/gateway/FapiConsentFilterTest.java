@@ -79,7 +79,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
   }
 
   @Test
-  void dado_semToken_quando_request_entao_retorna401() {
+  void given_noToken_when_request_then_returns401() {
     webTestClient.get()
         .uri("/open-banking/accounts/v2")
         .exchange()
@@ -88,7 +88,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
   }
 
   @Test
-  void dado_tokenSemCnf_quando_request_entao_retorna401() throws Exception {
+  void given_tokenWithoutCnf_when_request_then_returns401() throws Exception {
     JWTClaimsSet claims = new JWTClaimsSet.Builder()
         .jwtID(UUID.randomUUID().toString())
         .issuer(ISSUER)
@@ -113,7 +113,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
   }
 
   @Test
-  void dado_tokenValido_quando_consentimentoAutorizado_entao_passa() {
+  void given_validToken_when_consentAuthorised_then_passes() {
     webTestClient.get()
         .uri("/open-banking/accounts/v2")
         .header("Authorization", "Bearer " + validToken)
@@ -124,7 +124,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
   }
 
   @Test
-  void dado_semPermissao_quando_acessaTransacoes_entao_retorna403() {
+  void given_noPermission_when_accessTransactions_then_returns403() {
     webTestClient.get()
         .uri("/open-banking/accounts/v2/acc-001/transactions")
         .header("Authorization", "Bearer " + validToken)
@@ -136,7 +136,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
   }
 
   @Test
-  void dado_consentimentoInexistente_quando_request_entao_retorna401() throws Exception {
+  void given_nonExistentConsent_when_request_then_returns401() throws Exception {
     JWTClaimsSet claims = new JWTClaimsSet.Builder()
         .jwtID(UUID.randomUUID().toString())
         .issuer(ISSUER)
@@ -160,7 +160,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
   }
 
   @Test
-  void dado_tokenExpirado_quando_request_entao_retorna401() throws Exception {
+  void given_expiredToken_when_request_then_returns401() throws Exception {
     JWTClaimsSet claims = new JWTClaimsSet.Builder()
         .jwtID(UUID.randomUUID().toString())
         .issuer(ISSUER)
@@ -184,7 +184,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
   }
 
   @Test
-  void dado_assinaturaInvalida_quando_request_entao_retorna401() throws Exception {
+  void given_invalidSignature_when_request_then_returns401() throws Exception {
     KeyPair wrongKeyPair = CertificateGenerator.generateRsaKeyPair();
 
     JWTClaimsSet claims = new JWTClaimsSet.Builder()
@@ -210,7 +210,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
   }
 
   @Test
-  void dado_consentimentoRevogado_quando_request_entao_retorna403(
+  void given_revokedConsent_when_request_then_returns403(
       @Autowired ConsentStore consentStore) throws Exception {
     String revokedConsentId = "consent-revoked-" + UUID.randomUUID();
     ConsentData revoked = new ConsentData(

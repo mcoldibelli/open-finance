@@ -17,7 +17,7 @@ public class TestUtils {
   private static final String ISSUER = "https://as.localdev.codaline";
   private static final String AUDIENCE = "https://gateway.localdev.codaline";
 
-  public static String gerarToken(String jti) throws JOSEException {
+  public static String generateToken(String jti) throws JOSEException {
     JWTClaimsSet claims = new JWTClaimsSet.Builder()
         .jwtID(jti)
         .issuer(ISSUER)

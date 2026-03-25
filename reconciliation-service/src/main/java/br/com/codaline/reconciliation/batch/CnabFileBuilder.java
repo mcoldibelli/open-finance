@@ -18,13 +18,13 @@ public class CnabFileBuilder {
     char[] line = new char[LINE_LENGTH];
     Arrays.fill(line, ' ');
 
-    line[7] = '3'; // Tipo de registro: 3 (posição 008)
-    line[8] = 'A'; // Segmento: A (posição 009)
+    line[7] = '3'; // record type: 3 (position 008)
+    line[8] = 'A'; // segment: A (position 009)
 
-    writeField(line, 72, endToEndId, 20); // endToEndId - posições 073-092 (índices 72-91)
-    writeField(line, 92, debtorIspb, 8); // debtorIspb - posições 093-100 (índices 92-99)
-    writeField(line, 100, creditorIspb, 8); // creditorIspb - posições 101-108 (índices 100-107)
-    writeField(line, 152, amountCents, 16); // amount - posições 153-168 (índices 152-167)
+    writeField(line, 72, endToEndId, 20); // endToEndId - positions 073-092 (indices 72-91)
+    writeField(line, 92, debtorIspb, 8); // debtorIspb - positions 093-100 (indices 92-99)
+    writeField(line, 100, creditorIspb, 8); // creditorIspb - positions 101-108 (indices 100-107)
+    writeField(line, 152, amountCents, 16); // amount - positions 153-168 (indices 152-167)
 
     return new String(line);
   }
@@ -32,7 +32,7 @@ public class CnabFileBuilder {
   public static String buildHeaderLine() {
     char[] line = new char[LINE_LENGTH];
     Arrays.fill(line, ' ');
-    line[7] = '0'; // tipo: header de arquivo
+    line[7] = '0'; // type: file header
     return new String(line);
   }
 
