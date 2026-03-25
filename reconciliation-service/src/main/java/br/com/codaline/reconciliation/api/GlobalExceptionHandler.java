@@ -11,16 +11,6 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
-  @ExceptionHandler(DuplicateJobException.class)
-  public ProblemDetail handleDuplicateJob(DuplicateJobException ex) {
-    ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-        HttpStatus.CONFLICT, ex.getMessage());
-    problem.setTitle("Duplicate job");
-    problem.setType(URI.create("about:blank"));
-    problem.setProperty("fileReference", ex.getFileReference());
-    return problem;
-  }
-
   @ExceptionHandler(DataIntegrityViolationException.class)
   public ProblemDetail handleDataIntegrity(DataIntegrityViolationException ex) {
     ProblemDetail problem = ProblemDetail.forStatusAndDetail(

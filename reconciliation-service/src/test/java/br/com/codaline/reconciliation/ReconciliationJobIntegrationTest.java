@@ -38,6 +38,20 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
     }
   }
 
+  @Autowired
+  private JobLauncher jobLauncher;
+  @Autowired
+  @Qualifier("reconciliationJob")
+  private Job job;
+  @Autowired
+  private ReconciliationRunRepository runRepository;
+  @Autowired
+  private ReconciliationResultRepository resultRepository;
+  @Autowired
+  private LedgerTransactionRepository ledgerRepository;
+  @Autowired
+  private JdbcTemplate jdbcTemplate;
+
   @DynamicPropertySource
   static void jobProperties(DynamicPropertyRegistry registry) {
     registry.add("reconciliation.files.input-path", () -> CNAB_FILE.toAbsolutePath().toString());
@@ -47,25 +61,6 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
   static void cleanup() throws Exception {
     Files.deleteIfExists(CNAB_FILE);
   }
-
-  @Autowired
-  private JobLauncher jobLauncher;
-
-  @Autowired
-  @Qualifier("reconciliationJob")
-  private Job job;
-
-  @Autowired
-  private ReconciliationRunRepository runRepository;
-
-  @Autowired
-  private ReconciliationResultRepository resultRepository;
-
-  @Autowired
-  private LedgerTransactionRepository ledgerRepository;
-
-  @Autowired
-  private JdbcTemplate jdbcTemplate;
 
   @BeforeEach
   void setUp() {
@@ -84,9 +79,12 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
     String missingId = "E0000000300000000003";
 
     String cnabContent = CnabFileBuilder.buildHeaderLine() + "\n"
-        + CnabFileBuilder.buildSegmentALine(matchedId, "00000100", "00000200", "0000000000010050") + "\n"
-        + CnabFileBuilder.buildSegmentALine(divergentId, "00000200", "00000300", "0000000000020000") + "\n"
-        + CnabFileBuilder.buildSegmentALine(missingId, "00000300", "00000400", "0000000000005000") + "\n";
+        + CnabFileBuilder.buildSegmentALine(matchedId, "00000100", "00000200", "0000000000010050")
+        + "\n"
+        + CnabFileBuilder.buildSegmentALine(divergentId, "00000200", "00000300", "0000000000020000")
+        + "\n"
+        + CnabFileBuilder.buildSegmentALine(missingId, "00000300", "00000400", "0000000000005000")
+        + "\n";
     Files.writeString(CNAB_FILE, cnabContent);
 
     var ledgerMatched = new LedgerTransaction();
@@ -105,6 +103,14 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
     ledgerDivergent.setTransactionDate(LocalDate.now());
     ledgerRepository.save(ledgerDivergent);
 
+    var ledgerOrphan = new LedgerTransaction();
+    ledgerOrphan.setEndToEndId("E0000000400000000004");
+    ledgerOrphan.setAmount(new BigDecimal("300.00"));
+    ledgerOrphan.setDebtorIspb("00000400");
+    ledgerOrphan.setCreditorIspb("00000500");
+    ledgerOrphan.setTransactionDate(LocalDate.now());
+    ledgerRepository.save(ledgerOrphan);
+
     JobParameters params = new JobParametersBuilder()
         .addString("fileReference", fileReference)
         .toJobParameters();
@@ -121,9 +127,10 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
     assertThat(run.get().getMatchedCount()).isEqualTo(1);
     assertThat(run.get().getDivergenceCount()).isEqualTo(1);
     assertThat(run.get().getMissingInLedgerCount()).isEqualTo(1);
-    assertThat(run.get().getTotalRecords()).isEqualTo(3);
+    assertThat(run.get().getMissingInCipCount()).isEqualTo(1);
+    assertThat(run.get().getTotalRecords()).isEqualTo(4);
 
-    assertThat(resultRepository.count()).isEqualTo(3);
+    assertThat(resultRepository.count()).isEqualTo(4);
 
     // staging must be cleaned up after job
     Long stagingCount = jdbcTemplate.queryForObject(

@@ -36,6 +36,8 @@ public class ReconciliationJobListener implements JobExecutionListener {
     var saved = runRepository.save(run);
 
     jobExecution.getExecutionContext().putLong("runId", saved.getId());
+    jobExecution.getExecutionContext()
+        .putString("competenceDate", run.getCompetenceDate().toString());
   }
 
   @Override
@@ -43,14 +45,19 @@ public class ReconciliationJobListener implements JobExecutionListener {
     String fileReference = jobExecution.getJobParameters().getString("fileReference");
 
     runRepository.findByFileReference(fileReference).ifPresent(run -> {
+
       run.setMatchedCount(
           (int) resultRepository.countByRunAndStatus(run, ReconciliationStatus.MATCHED));
       run.setDivergenceCount(
           (int) resultRepository.countByRunAndStatus(run, ReconciliationStatus.AMOUNT_DIVERGENCE));
       run.setMissingInLedgerCount(
           (int) resultRepository.countByRunAndStatus(run, ReconciliationStatus.MISSING_IN_LEDGER));
+      run.setMissingInCipCount(
+          (int) resultRepository.countByRunAndStatus(run, ReconciliationStatus.MISSING_IN_CIP));
+
       run.setTotalRecords(
-          run.getMatchedCount() + run.getDivergenceCount() + run.getMissingInLedgerCount());
+          run.getMatchedCount() + run.getDivergenceCount() + run.getMissingInLedgerCount()
+              + run.getMissingInCipCount());
       run.setFinishedAt(LocalDateTime.now());
       run.setStatus(
           jobExecution.getStatus() == BatchStatus.COMPLETED
