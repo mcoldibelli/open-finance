@@ -21,11 +21,14 @@ class CipFileReaderTest {
   Path tempDir;
 
   @Test
-  void given_fileWithTwoTransactions_when_read_then_returnsBothWithCorrectValues() throws Exception {
+  void given_fileWithTwoTransactions_when_read_then_returnsBothWithCorrectValues()
+      throws Exception {
     Path file = tempDir.resolve("test.txt");
     String content = CnabFileBuilder.buildHeaderLine() + "\n"
-        + CnabFileBuilder.buildSegmentALine("E0000000100000123456", "ISPB0001", "ISPB0002", "0000000000010050") + "\n"
-        + CnabFileBuilder.buildSegmentALine("E0000000200000654321", "ISPB0003", "ISPB0004", "0000000000025000") + "\n"
+        + CnabFileBuilder.buildSegmentALine("E0000000100000123456", "ISPB0001", "ISPB0002",
+        "0000000000010050") + "\n"
+        + CnabFileBuilder.buildSegmentALine("E0000000200000654321", "ISPB0003", "ISPB0004",
+        "0000000000025000") + "\n"
         + CnabFileBuilder.buildHeaderLine() + "\n";
     Files.writeString(file, content);
 
@@ -56,7 +59,8 @@ class CipFileReaderTest {
   void given_transactionWithZeroAmount_when_read_then_returnsBigDecimalZero() throws Exception {
     Path file = tempDir.resolve("zero.txt");
     String content = CnabFileBuilder.buildHeaderLine() + "\n"
-        + CnabFileBuilder.buildSegmentALine("E0000000100000000000", "ISPB0001", "ISPB0002", "0000000000000000") + "\n";
+        + CnabFileBuilder.buildSegmentALine("E0000000100000000000", "ISPB0001", "ISPB0002",
+        "0000000000000000") + "\n";
     Files.writeString(file, content);
 
     List<CipTransaction> result = readAll(file);
@@ -67,7 +71,8 @@ class CipFileReaderTest {
 
   private List<CipTransaction> readAll(Path file) throws Exception {
     CipFileReaderConfig config = new CipFileReaderConfig();
-    FlatFileItemReader<CipTransaction> reader = config.cipFileReader(file.toString());
+    FlatFileItemReader<CipTransaction> reader = config.cipFileReader(
+        file.getParent().toString(), file.getFileName().toString());
     reader.open(new ExecutionContext());
     try {
       List<CipTransaction> items = new ArrayList<>();

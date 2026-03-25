@@ -29,10 +29,12 @@ import org.springframework.test.context.DynamicPropertySource;
 class ReconciliationJobIntegrationTest extends IntegrationTestBase {
 
   private static final Path CNAB_FILE;
+  private static final String FILE_NAME;
 
   static {
     try {
       CNAB_FILE = Files.createTempFile("cnab-test-", ".txt");
+      FILE_NAME = CNAB_FILE.getFileName().toString();
     } catch (Exception e) {
       throw new ExceptionInInitializerError(e);
     }
@@ -54,7 +56,8 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
 
   @DynamicPropertySource
   static void jobProperties(DynamicPropertyRegistry registry) {
-    registry.add("reconciliation.files.input-path", () -> CNAB_FILE.toAbsolutePath().toString());
+    registry.add("reconciliation.files.input-path",
+        () -> CNAB_FILE.getParent().toAbsolutePath().toString());
   }
 
   @AfterAll
@@ -73,7 +76,7 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
   void given_fileWithMixedTransactions_when_runJob_then_reconcilesCorrectly()
       throws Exception {
     // Arrange
-    String fileReference = "CNAB_2026-03-24_VARIADAS";
+    String fileReference = FILE_NAME;
     String matchedId = "E0000000100000000001";
     String divergentId = "E0000000200000000002";
     String missingId = "E0000000300000000003";
@@ -141,7 +144,7 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
   @Test
   void given_fileWithNoTransactions_when_runJob_then_completesWithNoResults() throws Exception {
     // Arrange
-    String fileReference = "CNAB_2026-03-24_VAZIO";
+    String fileReference = FILE_NAME;
     String cnabContent = CnabFileBuilder.buildHeaderLine() + "\n"
         + CnabFileBuilder.buildHeaderLine() + "\n";
     Files.writeString(CNAB_FILE, cnabContent);

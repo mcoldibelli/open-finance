@@ -1,5 +1,6 @@
 package br.com.codaline.reconciliation.batch;
 
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.batch.core.configuration.annotation.StepScope;
@@ -28,7 +29,8 @@ public class CipFileReaderConfig {
   @Bean
   @StepScope
   public FlatFileItemReader<CipTransaction> cipFileReader(
-      @Value("${reconciliation.files.input-path}") String inputPath) {
+      @Value("${reconciliation.files.input-path}") String inputPath,
+      @Value("#{jobParameters['fileReference']}") String fileReference) {
 
     FixedLengthTokenizer segmentA = new FixedLengthTokenizer();
     segmentA.setNames("endToEndId", "debtorIspb", "creditorIspb", "amount");
@@ -48,9 +50,11 @@ public class CipFileReaderConfig {
     mappers.put("*", fieldSet -> null);
     lineMapper.setFieldSetMappers(mappers);
 
+    Path filePath = Path.of(inputPath, fileReference);
+
     FlatFileItemReader<CipTransaction> reader = new FlatFileItemReader<>();
     reader.setLineMapper(lineMapper);
-    reader.setResource(new FileSystemResource(inputPath));
+    reader.setResource(new FileSystemResource(filePath));
     reader.setLinesToSkip(1);
 
     return reader;
