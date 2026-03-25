@@ -129,7 +129,6 @@ services:
       redis:
         condition: service_healthy
 
-
 volumes:
   redis-data:
   postgres-data:

@@ -18,18 +18,23 @@ public class ReconciliationRun {
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
+
   @Column(nullable = false, unique = true)
   private String fileReference;
+
   @Column(nullable = false)
   private LocalDate competenceDate;
+
   @Column(nullable = false)
   private LocalDateTime startedAt;
+
   private LocalDateTime finishedAt;
   private Integer totalRecords;
   private Integer matchedCount;
   private Integer divergenceCount;
   private Integer missingInLedgerCount;
   private Integer missingInCipCount;
+
   @Enumerated(EnumType.STRING)
   @Column(nullable = false)
   private RunStatus status;
