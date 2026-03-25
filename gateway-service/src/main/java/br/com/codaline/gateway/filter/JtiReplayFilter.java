@@ -65,12 +65,7 @@ public class JtiReplayFilter implements GatewayFilter, Ordered {
   }
 
   private Mono<Void> reject(ServerWebExchange exchange, HttpStatus status, String reason) {
-    return Mono.defer(() -> {
-      log.warn("JTI rejected: {}", reason);
-      exchange.getResponse().setStatusCode(status);
-      exchange.getResponse().getHeaders().add("X-Rejection-Reason", reason);
-      return exchange.getResponse().setComplete();
-    });
+    return FilterResponseUtils.reject(exchange, status, reason, log);
   }
 
   @Override

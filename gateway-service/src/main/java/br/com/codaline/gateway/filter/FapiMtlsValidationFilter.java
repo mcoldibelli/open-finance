@@ -127,12 +127,7 @@ public class FapiMtlsValidationFilter implements GatewayFilter, Ordered {
   }
 
   private Mono<Void> reject(ServerWebExchange exchange, String reason) {
-    return Mono.defer(() -> {
-      log.warn("Request rejected: {}", reason);
-      exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-      exchange.getResponse().getHeaders().add("X-Rejection-Reason", reason);
-      return exchange.getResponse().setComplete();
-    });
+    return FilterResponseUtils.reject(exchange, HttpStatus.UNAUTHORIZED, reason, log);
   }
 
   @Override
