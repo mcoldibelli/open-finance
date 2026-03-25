@@ -76,11 +76,11 @@ public class LedgerTransaction {
     this.creditorIspb = creditorIspb;
   }
 
-  public LocalDate getTransactinDate() {
+  public LocalDate getTransactionDate() {
     return transactionDate;
   }
 
-  public void setTransactinDate(LocalDate transactionDate) {
+  public void setTransactionDate(LocalDate transactionDate) {
     this.transactionDate = transactionDate;
   }
 }

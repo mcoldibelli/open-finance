@@ -90,7 +90,7 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
     ledgerMatched.setAmount(new BigDecimal("100.50"));
     ledgerMatched.setDebtorIspb("00000100");
     ledgerMatched.setCreditorIspb("00000200");
-    ledgerMatched.setTransactinDate(LocalDate.now());
+    ledgerMatched.setTransactionDate(LocalDate.now());
     ledgerRepository.save(ledgerMatched);
 
     var ledgerDivergent = new LedgerTransaction();
@@ -98,7 +98,7 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
     ledgerDivergent.setAmount(new BigDecimal("199.99"));
     ledgerDivergent.setDebtorIspb("00000200");
     ledgerDivergent.setCreditorIspb("00000300");
-    ledgerDivergent.setTransactinDate(LocalDate.now());
+    ledgerDivergent.setTransactionDate(LocalDate.now());
     ledgerRepository.save(ledgerDivergent);
 
     JobParameters params = new JobParametersBuilder()

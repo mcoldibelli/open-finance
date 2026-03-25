@@ -1,12 +1,24 @@
 # Open Finance
 
-API Gateway que implementa os requisitos de seguranca do Open Finance Brasil (FAPI 1.0 Advanced) —
-mTLS, certificate-bound access tokens (RFC 8705), JTI replay prevention, validacao de consentimentos
-e rate limiting por consent_id.
+Plataforma de servicos Open Finance Brasil composta por um API Gateway FAPI 1.0 Advanced (mTLS,
+certificate-bound access tokens, JTI replay prevention, validacao de consentimentos e rate limiting)
+e um servico de reconciliacao financeira que compara transacoes do ledger interno com arquivos CNAB240
+da CIP via Spring Batch.
 
 [![CI](https://github.com/mcoldibelli/open-finance/actions/workflows/ci.yml/badge.svg)](https://github.com/mcoldibelli/open-finance/actions/workflows/ci.yml)
 [![CD](https://github.com/mcoldibelli/open-finance/actions/workflows/cd.yml/badge.svg)](https://github.com/mcoldibelli/open-finance/actions/workflows/cd.yml)
 ![Java 21](https://img.shields.io/badge/Java-21-blue)
+
+---
+
+## Modulos
+
+| Modulo                    | Porta | Responsabilidade                                                                                |
+|---------------------------|-------|-------------------------------------------------------------------------------------------------|
+| **config-server**         | 8888  | Servidor de configuracao centralizado (Spring Cloud Config, perfil `native`)                    |
+| **gateway-service**       | 8443  | API Gateway FAPI 1.0 Advanced — mTLS, JWT, cnf binding, consent, rate limiting                 |
+| **accounts-service**      | 8081  | Stub de contas Open Banking (`/open-banking/accounts/v2`) — dados mock para testes do gateway   |
+| **reconciliation-service**| 8082  | Reconciliacao financeira CIP/CNAB240 via Spring Batch ([README proprio](reconciliation-service/README.md)) |
 
 ---
 
@@ -39,16 +51,27 @@ flowchart TB
     CS[Config Server :8888]
     REDIS[(Redis :6379)]
     ACCS[accounts-service :8081]
+    PG[(PostgreSQL :5432)]
+    KAFKA[Kafka :9092]
+    RECON[reconciliation-service :8082]
 
     TPP -->|"mTLS (client cert) + Bearer JWT"| gw
     gw -.->|perfis por ambiente| CS
     gw -->|consent store + JTI + rate limit| REDIS
     gw -->|proxy reverso| ACCS
+    RECON -.->|perfis por ambiente| CS
+    RECON -->|ledger + reconciliation runs| PG
+    RECON -->|divergencias| KAFKA
+    RECON -->|idempotencia de job| REDIS
 ```
 
-O Gateway e o unico ponto de entrada. Nenhum servico interno aceita trafego externo. O TPP (
-instituicao participante do Open Finance) precisa apresentar certificado de cliente via mTLS e um
-JWT assinado pelo Authorization Server para que a request passe pela cadeia de filtros.
+O Gateway e o unico ponto de entrada para o Open Finance. Nenhum servico interno aceita trafego
+externo. O TPP (instituicao participante do Open Finance) precisa apresentar certificado de cliente
+via mTLS e um JWT assinado pelo Authorization Server para que a request passe pela cadeia de filtros.
+
+O reconciliation-service opera de forma independente, processando arquivos CNAB240 da CIP e
+publicando divergencias no Kafka. Detalhes de design do batch em
+[reconciliation-service/README.md](reconciliation-service/README.md).
 
 ---
 
@@ -61,8 +84,12 @@ JWT assinado pelo Authorization Server para que a request passe pela cadeia de f
 | **Spring Cloud Config**  | Configuracao centralizada     | Perfis por ambiente (`local`, `docker`), sem rebuild — rotas e rate limits podem mudar sem redeploy                  |
 | **Redis**                | Rate limiting + consent + JTI | TTL nativo para expiracao de consentimentos e JTI replay, operacoes atomicas via Lua script, Lettuce (non-blocking)  |
 | **Nimbus JOSE+JWT**      | Processamento JWT             | Implementacao de referencia para JOSE/JWT, suporte a RS256 e claims customizadas (`cnf`, `consent_id`)               |
+| **Spring Batch 5**       | Reconciliacao em batch        | Chunk-oriented processing, particionamento nativo por ISPB, restart/retry, listeners para auditoria                  |
+| **Spring Data JPA**      | Persistencia                  | Abstracao sobre Hibernate, batch insert com `hibernate.jdbc.batch_size=500` e `order_inserts=true`                   |
+| **PostgreSQL 16**        | Banco de dados                | ACID, `NUMERIC(15,2)` para valores monetarios, Flyway para migracoes versionadas                                    |
+| **Apache Kafka 3.7**     | Mensageria assincrona         | Pub/sub para divergencias de reconciliacao, ordering por `endToEndId` (partition key)                                |
 | **Bouncy Castle**        | Certificados de teste         | Geracao programatica de KeyPair e X.509 em memoria — testes reproduziveis sem arquivos externos                      |
-| **Testcontainers**       | Redis em teste                | Container Redis efemero por classe de teste, sem dependencia de infra local                                          |
+| **Testcontainers**       | Infra de teste                | Redis, PostgreSQL e Kafka reais em containers efemeros, sem dependencia de infra local                               |
 | **Docker**               | Containerizacao               | Multi-stage build (JDK -> JRE), imagem Alpine, usuario non-root                                                     |
 | **GitHub Actions**       | CI/CD                         | Build e testes automaticos, push para GHCR, pipeline staging -> prod                                                 |
 
@@ -279,11 +306,12 @@ cp as-public.pem ../gateway-service/src/main/resources/
 
 ```dotenv
 REDIS_PASSWORD=openfinance123
+POSTGRES_PASSWORD=reconciliation123
 SSL_KEYSTORE_PASSWORD=gateway123
 SSL_TRUSTSTORE_PASSWORD=truststore123
 SSL_KEYSTORE_PATH=/absolute/path/to/certs/server.p12
 SSL_TRUSTSTORE_PATH=/absolute/path/to/certs/truststore.p12
-CONFIG_SERVER_URI=http://config-server:8888
+CERTS_DIR=/absolute/path/to/certs
 ```
 
 ### 3. Subir os servicos
@@ -292,13 +320,16 @@ CONFIG_SERVER_URI=http://config-server:8888
 docker compose up --build
 ```
 
+Servicos do compose: Redis, PostgreSQL, Kafka (KRaft), Config Server, Gateway, Accounts e
+Reconciliation. Health checks garantem a ordem de inicializacao.
+
 ---
 
 ## Testes
 
 Os testes de integracao **nao dependem de arquivos externos**. Certificados e chaves sao gerados
-programaticamente em memoria via Bouncy Castle, e o Redis roda em container efemero via
-Testcontainers.
+programaticamente em memoria via Bouncy Castle, e toda a infraestrutura (Redis, PostgreSQL, Kafka)
+roda em containers efemeros via Testcontainers.
 
 ```bash
 # Nenhuma variavel de ambiente necessaria
@@ -307,18 +338,19 @@ Testcontainers.
 
 ### Infraestrutura de teste
 
-| Componente            | Como funciona nos testes                                         |
-|-----------------------|------------------------------------------------------------------|
-| **Certificados**      | `CertificateGenerator` gera KeyPair RSA e X.509 em memoria      |
-| **Thumbprint**        | Computado com SHA-256 do certificado gerado                      |
-| **Chave publica AS**  | `TestJwtConfig` injeta `RSASSAVerifier` com chave gerada         |
-| **Redis**             | Testcontainers sobe `redis:7.2-alpine` com porta dinamica        |
-| **SSL**               | Desabilitado — thumbprint via header `X-Cert-Thumbprint`         |
-| **Config Server**     | Desabilitado — rotas definidas via `@TestPropertySource`         |
+| Componente            | Gateway                                                  | Reconciliation                                           |
+|-----------------------|----------------------------------------------------------|----------------------------------------------------------|
+| **Certificados**      | `CertificateGenerator` gera KeyPair RSA e X.509          | —                                                        |
+| **Chave publica AS**  | `TestJwtConfig` injeta `RSASSAVerifier` com chave gerada | —                                                        |
+| **Redis**             | Testcontainers `redis:7.2-alpine` com porta dinamica     | —                                                        |
+| **PostgreSQL**        | —                                                        | Testcontainers `postgres:16-alpine`                      |
+| **Kafka**             | —                                                        | Testcontainers `confluentinc/cp-kafka:7.6.0`             |
+| **SSL**               | Desabilitado — thumbprint via header                     | —                                                        |
+| **Config Server**     | Desabilitado — rotas via `@TestPropertySource`           | Desabilitado — datasource via `@DynamicPropertySource`   |
 
 ### O que cada teste valida
 
-#### FapiConsentFilterTest (8 testes)
+#### Gateway — FapiConsentFilterTest (8 testes)
 
 | Teste                                                        | Cenario                                         | Resposta |
 |--------------------------------------------------------------|-------------------------------------------------|----------|
@@ -331,12 +363,20 @@ Testcontainers.
 | `dado_assinaturaInvalida_quando_request_entao_retorna401`    | JWT assinado com chave diferente do AS          | 401      |
 | `dado_consentimentoRevogado_quando_request_entao_retorna403` | Consent com status REVOKED                      | 403      |
 
-#### JtiReplayFilterTest (2 testes)
+#### Gateway — JtiReplayFilterTest (2 testes)
 
 | Teste                                                        | Cenario                                         | Resposta |
 |--------------------------------------------------------------|-------------------------------------------------|----------|
 | `dado_mesmoToken_quando_replayAttack_entao_retorna401`       | Mesmo JWT enviado 2x — segundo uso rejeitado    | 401      |
 | `dado_tokensDistintos_quando_requests_entao_ambosPassam`     | JTIs diferentes passam independentemente         | 200/502  |
+
+#### Reconciliation — testes unitarios e integracao
+
+| Classe                             | Tipo       | O que valida                                                                           |
+|------------------------------------|------------|----------------------------------------------------------------------------------------|
+| `CipFileReaderTest`                | Unitario   | Parsing CNAB240: campos posicionais, conversao centavos, header ignorado               |
+| `CipTransactionFieldSetMapperTest` | Unitario   | Validacao do campo `amount`: numerico, rejeicao de invalidos, `movePointLeft(2)`       |
+| `ReconciliationJobIntegrationTest` | Integracao | Fluxo completo: CNAB -> reconciliacao com ledger -> persistencia -> contadores no run  |
 
 ---
 
@@ -346,7 +386,7 @@ Testcontainers.
 push (qualquer branch)
   └─ CI: build + testes
        ├─ Setup Java 21
-       ├─ ./mvnw verify (Testcontainers sobe Redis automaticamente)
+       ├─ ./mvnw verify (Testcontainers sobe Redis, PostgreSQL e Kafka)
        └─ Upload de relatorios Surefire
 
 push (main)
@@ -355,7 +395,8 @@ push (main)
        ├─ Push para GHCR (ghcr.io/mcoldibelli/open-finance/*)
        │   ├─ config-server:latest + :sha
        │   ├─ gateway-service:latest + :sha
-       │   └─ accounts-service:latest + :sha
+       │   ├─ accounts-service:latest + :sha
+       │   └─ reconciliation-service:latest + :sha
        ├─ Deploy staging (environment gate)
        └─ Deploy production
 ```

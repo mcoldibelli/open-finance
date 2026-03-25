@@ -25,7 +25,6 @@ public class ReconciliationRun {
   @Column(nullable = false)
   private LocalDateTime startedAt;
   private LocalDateTime finishedAt;
-  @Column(nullable = false)
   private Integer totalRecords;
   private Integer matchedCount;
   private Integer divergenceCount;

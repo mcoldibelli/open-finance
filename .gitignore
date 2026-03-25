@@ -30,4 +30,5 @@ secrets/
 .DS_Store
 Thumbs.db
 
-**/as-private.keydata/input/*.txt
+**/as-private.key
+data/input/*.txt
