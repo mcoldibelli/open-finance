@@ -12,9 +12,9 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobParameters;
@@ -28,17 +28,8 @@ import org.springframework.test.context.DynamicPropertySource;
 
 class ReconciliationJobIntegrationTest extends IntegrationTestBase {
 
-  private static final Path CNAB_FILE;
-  private static final String FILE_NAME;
-
-  static {
-    try {
-      CNAB_FILE = Files.createTempFile("cnab-test-", ".txt");
-      FILE_NAME = CNAB_FILE.getFileName().toString();
-    } catch (Exception e) {
-      throw new ExceptionInInitializerError(e);
-    }
-  }
+  @TempDir
+  static Path tempDir;
 
   @Autowired
   private JobLauncher jobLauncher;
@@ -57,12 +48,7 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
   @DynamicPropertySource
   static void jobProperties(DynamicPropertyRegistry registry) {
     registry.add("reconciliation.files.input-path",
-        () -> CNAB_FILE.getParent().toAbsolutePath().toString());
-  }
-
-  @AfterAll
-  static void cleanup() throws Exception {
-    Files.deleteIfExists(CNAB_FILE);
+        () -> tempDir.toAbsolutePath().toString());
   }
 
   @BeforeEach
@@ -76,7 +62,8 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
   void given_fileWithMixedTransactions_when_runJob_then_reconcilesCorrectly()
       throws Exception {
     // Arrange
-    String fileReference = FILE_NAME;
+    Path cnabFile = Files.createTempFile(tempDir, "cnab-test-", ".txt");
+    String fileReference = cnabFile.getFileName().toString();
     String matchedId = "E0000000100000000001";
     String divergentId = "E0000000200000000002";
     String missingId = "E0000000300000000003";
@@ -88,7 +75,7 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
         + "\n"
         + CnabFileBuilder.buildSegmentALine(missingId, "00000300", "00000400", "0000000000005000")
         + "\n";
-    Files.writeString(CNAB_FILE, cnabContent);
+    Files.writeString(cnabFile, cnabContent);
 
     var ledgerMatched = new LedgerTransaction();
     ledgerMatched.setEndToEndId(matchedId);
@@ -144,10 +131,11 @@ class ReconciliationJobIntegrationTest extends IntegrationTestBase {
   @Test
   void given_fileWithNoTransactions_when_runJob_then_completesWithNoResults() throws Exception {
     // Arrange
-    String fileReference = FILE_NAME;
+    Path cnabFile = Files.createTempFile(tempDir, "cnab-test-", ".txt");
+    String fileReference = cnabFile.getFileName().toString();
     String cnabContent = CnabFileBuilder.buildHeaderLine() + "\n"
         + CnabFileBuilder.buildHeaderLine() + "\n";
-    Files.writeString(CNAB_FILE, cnabContent);
+    Files.writeString(cnabFile, cnabContent);
 
     JobParameters params = new JobParametersBuilder()
         .addString("fileReference", fileReference)
