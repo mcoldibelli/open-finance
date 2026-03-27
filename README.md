@@ -280,7 +280,7 @@ openssl req -new -key server.key -out server.csr \
 openssl x509 -req -days 365 -in server.csr \
   -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt
 openssl pkcs12 -export -in server.crt -inkey server.key \
-  -out server.p12 -name gateway -passout pass:gateway123
+  -out server.p12 -name gateway -passout pass:${SSL_KEYSTORE_PASSWORD}
 
 # Certificado do cliente (TPP simulado)
 openssl genrsa -out client.key 2048
@@ -292,7 +292,7 @@ openssl x509 -req -days 365 -in client.csr \
 # Truststore (contem o CA)
 keytool -import -file ca.crt -alias ca-root \
   -keystore truststore.p12 -storetype PKCS12 \
-  -storepass truststore123 -noprompt
+  -storepass ${SSL_TRUSTSTORE_PASSWORD} -noprompt
 
 # Par de chaves do Authorization Server
 openssl genrsa -out as-private.key 2048
@@ -305,10 +305,10 @@ cp as-public.pem ../gateway-service/src/main/resources/
 ### 2. Configurar `.env`
 
 ```dotenv
-REDIS_PASSWORD=openfinance123
-POSTGRES_PASSWORD=reconciliation123
-SSL_KEYSTORE_PASSWORD=gateway123
-SSL_TRUSTSTORE_PASSWORD=truststore123
+REDIS_PASSWORD=<sua-senha-redis>
+POSTGRES_PASSWORD=<sua-senha-postgres>
+SSL_KEYSTORE_PASSWORD=<sua-senha-keystore>
+SSL_TRUSTSTORE_PASSWORD=<sua-senha-truststore>
 SSL_KEYSTORE_PATH=/absolute/path/to/certs/server.p12
 SSL_TRUSTSTORE_PATH=/absolute/path/to/certs/truststore.p12
 CERTS_DIR=/absolute/path/to/certs
