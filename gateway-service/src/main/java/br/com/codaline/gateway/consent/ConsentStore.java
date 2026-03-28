@@ -3,9 +3,10 @@ package br.com.codaline.gateway.consent;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
@@ -58,7 +59,7 @@ public class ConsentStore {
         .then();
   }
 
-  private Mono<ConsentData> toConsentData(Map<String, String> fields) {
+  Mono<ConsentData> toConsentData(Map<String, String> fields) {
     String statusRaw = fields.get("status");
     String permissionsRaw = fields.get("permissions");
 
@@ -69,10 +70,19 @@ public class ConsentStore {
     }
 
     try {
+      Set<String> permissions = Arrays.stream(permissionsRaw.split(","))
+          .filter(s -> !s.isBlank())
+          .collect(Collectors.toSet());
+
+      if (permissions.isEmpty()) {
+        log.warn("Empty permissions in Redis for consent: {}", fields.get("consent_id"));
+        return Mono.empty();
+      }
+
       return Mono.just(new ConsentData(
           fields.get("consent_id"),
           ConsentStatus.valueOf(statusRaw),
-          new HashSet<>(Arrays.asList(permissionsRaw.split(","))),
+          permissions,
           fields.get("cpf"),
           fields.get("client_id")
       ));
