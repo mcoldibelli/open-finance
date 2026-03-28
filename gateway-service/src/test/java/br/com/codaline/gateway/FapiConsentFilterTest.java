@@ -83,7 +83,8 @@ class FapiConsentFilterTest extends IntegrationTestBase {
     webTestClient.get()
         .uri("/open-banking/accounts/v2")
         .exchange()
-        .expectStatus().isUnauthorized();
+        .expectStatus().isUnauthorized()
+        .expectBody().isEmpty();
   }
 
   @Test
@@ -106,7 +107,8 @@ class FapiConsentFilterTest extends IntegrationTestBase {
         .header("Authorization", "Bearer " + jwt.serialize())
         .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
         .exchange()
-        .expectStatus().isUnauthorized();
+        .expectStatus().isUnauthorized()
+        .expectBody().isEmpty();
   }
 
   @Test
@@ -127,7 +129,8 @@ class FapiConsentFilterTest extends IntegrationTestBase {
         .header("Authorization", "Bearer " + validToken)
         .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
         .exchange()
-        .expectStatus().isForbidden();
+        .expectStatus().isForbidden()
+        .expectBody().isEmpty();
   }
 
   @Test
@@ -151,7 +154,8 @@ class FapiConsentFilterTest extends IntegrationTestBase {
         .header("Authorization", "Bearer " + jwt.serialize())
         .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
         .exchange()
-        .expectStatus().isUnauthorized();
+        .expectStatus().isUnauthorized()
+        .expectBody().isEmpty();
   }
 
   @Test
@@ -175,7 +179,8 @@ class FapiConsentFilterTest extends IntegrationTestBase {
         .header("Authorization", "Bearer " + jwt.serialize())
         .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
         .exchange()
-        .expectStatus().isUnauthorized();
+        .expectStatus().isUnauthorized()
+        .expectBody().isEmpty();
   }
 
   @Test
@@ -201,7 +206,8 @@ class FapiConsentFilterTest extends IntegrationTestBase {
         .header("Authorization", "Bearer " + jwt.serialize())
         .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
         .exchange()
-        .expectStatus().isUnauthorized();
+        .expectStatus().isUnauthorized()
+        .expectBody().isEmpty();
   }
 
   @Test
@@ -234,6 +240,7 @@ class FapiConsentFilterTest extends IntegrationTestBase {
         .header("Authorization", "Bearer " + jwt.serialize())
         .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
         .exchange()
-        .expectStatus().isForbidden();
+        .expectStatus().isForbidden()
+        .expectBody().isEmpty();
   }
 }

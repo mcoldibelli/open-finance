@@ -67,7 +67,8 @@ class JtiReplayFilterTest extends IntegrationTestBase {
         .header("Authorization", "Bearer " + token)
         .header("X-Cert-Thumbprint", CLIENT_THUMBPRINT)
         .exchange()
-        .expectStatus().isUnauthorized();
+        .expectStatus().isUnauthorized()
+        .expectBody().isEmpty();
   }
 
   @Test
