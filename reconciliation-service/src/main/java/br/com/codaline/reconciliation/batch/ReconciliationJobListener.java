@@ -12,6 +12,7 @@ import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobExecutionListener;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 public class ReconciliationJobListener implements JobExecutionListener {
@@ -40,6 +41,7 @@ public class ReconciliationJobListener implements JobExecutionListener {
         .putString("competenceDate", run.getCompetenceDate().toString());
   }
 
+  @Transactional
   @Override
   public void afterJob(JobExecution jobExecution) {
     String fileReference = jobExecution.getJobParameters().getString("fileReference");
