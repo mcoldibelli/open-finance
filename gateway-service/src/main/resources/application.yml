@@ -23,3 +23,7 @@ server:
     trust-store: ${SSL_TRUSTSTORE_PATH}
     trust-store-password: ${SSL_TRUSTSTORE_PASSWORD}
     trust-store-type: PKCS12
+
+jwks:
+  url: ${JWKS_URL:https://as.localdev.codaline/.well-known/jwks.json}
+  cache-ttl: ${JWKS_CACHE_TTL:5m}

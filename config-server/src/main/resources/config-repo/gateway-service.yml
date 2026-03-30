@@ -6,6 +6,10 @@ gateway:
     replenish-rate: 10
     burst-capacity: 20
 
+jwks:
+  url: https://as.localdev.codaline/.well-known/jwks.json
+  cache-ttl: 5m
+
 spring:
   data:
     redis:
