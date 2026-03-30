@@ -72,7 +72,8 @@ class FapiConsentFilterTest extends IntegrationTestBase {
         .build();
 
     SignedJWT jwt = new SignedJWT(
-        new JWSHeader.Builder(JWSAlgorithm.RS256).build(), claims
+        new JWSHeader.Builder(JWSAlgorithm.RS256)
+            .keyID(TestJwtConfig.TEST_KID).build(), claims
     );
     jwt.sign(new RSASSASigner(AS_KEY_PAIR.getPrivate()));
     validToken = jwt.serialize();
@@ -98,7 +99,8 @@ class FapiConsentFilterTest extends IntegrationTestBase {
         .build();
 
     SignedJWT jwt = new SignedJWT(
-        new JWSHeader.Builder(JWSAlgorithm.RS256).build(), claims
+        new JWSHeader.Builder(JWSAlgorithm.RS256)
+            .keyID(TestJwtConfig.TEST_KID).build(), claims
     );
     jwt.sign(new RSASSASigner((RSAPrivateKey) AS_KEY_PAIR.getPrivate()));
 
@@ -145,7 +147,8 @@ class FapiConsentFilterTest extends IntegrationTestBase {
         .build();
 
     SignedJWT jwt = new SignedJWT(
-        new JWSHeader.Builder(JWSAlgorithm.RS256).build(), claims
+        new JWSHeader.Builder(JWSAlgorithm.RS256)
+            .keyID(TestJwtConfig.TEST_KID).build(), claims
     );
     jwt.sign(new RSASSASigner((RSAPrivateKey) AS_KEY_PAIR.getPrivate()));
 
@@ -170,7 +173,8 @@ class FapiConsentFilterTest extends IntegrationTestBase {
         .build();
 
     SignedJWT jwt = new SignedJWT(
-        new JWSHeader.Builder(JWSAlgorithm.RS256).build(), claims
+        new JWSHeader.Builder(JWSAlgorithm.RS256)
+            .keyID(TestJwtConfig.TEST_KID).build(), claims
     );
     jwt.sign(new RSASSASigner((RSAPrivateKey) AS_KEY_PAIR.getPrivate()));
 
@@ -197,7 +201,8 @@ class FapiConsentFilterTest extends IntegrationTestBase {
         .build();
 
     SignedJWT jwt = new SignedJWT(
-        new JWSHeader.Builder(JWSAlgorithm.RS256).build(), claims
+        new JWSHeader.Builder(JWSAlgorithm.RS256)
+            .keyID(TestJwtConfig.TEST_KID).build(), claims
     );
     jwt.sign(new RSASSASigner((RSAPrivateKey) wrongKeyPair.getPrivate()));
 
@@ -231,7 +236,8 @@ class FapiConsentFilterTest extends IntegrationTestBase {
         .build();
 
     SignedJWT jwt = new SignedJWT(
-        new JWSHeader.Builder(JWSAlgorithm.RS256).build(), claims
+        new JWSHeader.Builder(JWSAlgorithm.RS256)
+            .keyID(TestJwtConfig.TEST_KID).build(), claims
     );
     jwt.sign(new RSASSASigner((RSAPrivateKey) AS_KEY_PAIR.getPrivate()));
 
