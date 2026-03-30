@@ -13,43 +13,52 @@ public class JwtVerifier {
 
   private static final Logger log = LoggerFactory.getLogger(JwtVerifier.class);
 
-  private final RSASSAVerifier verifier;
+  private final JwkSetProvider jwkSetProvider;
   private final String expectedIssuer;
   private final String expectedAudience;
 
-  public JwtVerifier(RSASSAVerifier verifier, String expectedIssuer, String expectedAudience) {
-    this.verifier = verifier;
+  public JwtVerifier(JwkSetProvider jwkSetProvider, String expectedIssuer,
+      String expectedAudience) {
+    this.jwkSetProvider = jwkSetProvider;
     this.expectedIssuer = expectedIssuer;
     this.expectedAudience = expectedAudience;
   }
 
   public Mono<JWTClaimsSet> verify(String token) {
-    return Mono.fromCallable(() -> {
-      SignedJWT jwt = SignedJWT.parse(token);
+    return Mono.fromCallable(() -> SignedJWT.parse(token))
+        .subscribeOn(Schedulers.boundedElastic())
+        .flatMap(jwt -> {
+          String kid = jwt.getHeader().getKeyID();
+          if (kid == null) {
+            return Mono.error(new SecurityException("JWT missing kid header"));
+          }
+          return jwkSetProvider.getKey(kid)
+              .flatMap(publicKey -> Mono.fromCallable(() -> {
+                if (!jwt.verify(new RSASSAVerifier(publicKey))) {
+                  throw new SecurityException("Invalid JWT signature");
+                }
+                return validateClaims(jwt.getJWTClaimsSet());
+              }));
+        });
+  }
 
-      if (!jwt.verify(verifier)) {
-        throw new SecurityException("Invalid JWT signature");
-      }
+  private JWTClaimsSet validateClaims(JWTClaimsSet claims) {
+    Date now = new Date();
+    if (claims.getExpirationTime() == null || claims.getExpirationTime().before(now)) {
+      throw new SecurityException("JWT is expired");
+    }
 
-      JWTClaimsSet claims = jwt.getJWTClaimsSet();
+    if (!expectedIssuer.equals(claims.getIssuer())) {
+      log.warn("JWT issuer mismatch: expected={}, actual={}", expectedIssuer, claims.getIssuer());
+      throw new SecurityException("Invalid token issuer");
+    }
 
-      Date now = new Date();
-      if (claims.getExpirationTime() == null || claims.getExpirationTime().before(now)) {
-        throw new SecurityException("JWT is expired");
-      }
-
-      if (!expectedIssuer.equals(claims.getIssuer())) {
-        log.warn("JWT issuer mismatch: expected={}, actual={}", expectedIssuer, claims.getIssuer());
-        throw new SecurityException("Invalid token issuer");
-      }
-
-      if (!claims.getAudience().contains(expectedAudience)) {
-        log.warn("JWT audience mismatch: expected={}, actual={}", expectedAudience, claims.getAudience());
-        throw new SecurityException("Invalid token audience");
-      }
-
-      return claims;
-    }).subscribeOn(Schedulers.boundedElastic());
+    if (!claims.getAudience().contains(expectedAudience)) {
+      log.warn("JWT audience mismatch: expected={}, actual={}", expectedAudience,
+          claims.getAudience());
+      throw new SecurityException("Invalid token audience");
+    }
+    return claims;
   }
 
 }
