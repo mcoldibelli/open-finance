@@ -45,3 +45,14 @@ spring:
                 redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity}
                 redis-rate-limiter.requestedTokens: 1
                 key-resolver: "#{@consentKeyResolver}"
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      retries: 3
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+kafka:
+  topics:
+    audit: audit.events

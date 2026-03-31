@@ -23,6 +23,8 @@ spring:
                 redis-rate-limiter.burstCapacity: ${gateway.rate-limit.burst-capacity}
                 redis-rate-limiter.requestedTokens: 1
                 key-resolver: "#{@consentKeyResolver}"
+  kafka:
+    bootstrap-servers: kafka-openfinance:9092
 
 jwt:
   issuer: https://as.localdev.codaline

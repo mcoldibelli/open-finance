@@ -40,16 +40,6 @@
       <artifactId>spring-boot-starter-actuator</artifactId>
       <groupId>org.springframework.boot</groupId>
     </dependency>
-    <dependency>
-      <artifactId>spring-boot-starter-test</artifactId>
-      <groupId>org.springframework.boot</groupId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>io.projectreactor</groupId>
-      <artifactId>reactor-test</artifactId>
-      <scope>test</scope>
-    </dependency>
 
     <dependency>
       <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
@@ -60,6 +50,23 @@
       <artifactId>nimbus-jose-jwt</artifactId>
       <groupId>com.nimbusds</groupId>
       <version>10.8</version>
+    </dependency>
+
+    <dependency>
+      <artifactId>spring-kafka</artifactId>
+      <groupId>org.springframework.kafka</groupId>
+    </dependency>
+
+    <dependency>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <groupId>org.springframework.boot</groupId>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <artifactId>reactor-test</artifactId>
+      <groupId>io.projectreactor</groupId>
+      <scope>test</scope>
     </dependency>
 
     <dependency>
@@ -84,19 +91,6 @@
 
   <modelVersion>4.0.0</modelVersion>
 
-  <profiles>
-    <profile>
-      <id>dev</id>
-      <dependencies>
-        <dependency>
-          <groupId>me.paulschwarz</groupId>
-          <artifactId>spring-dotenv</artifactId>
-          <version>4.0.0</version>
-        </dependency>
-      </dependencies>
-    </profile>
-  </profiles>
-
   <name>gateway-service</name>
 
   <parent>
@@ -105,5 +99,18 @@
     <relativePath>../pom.xml</relativePath>
     <version>1.0.0</version>
   </parent>
+
+  <profiles>
+    <profile>
+      <dependencies>
+        <dependency>
+          <artifactId>spring-dotenv</artifactId>
+          <groupId>me.paulschwarz</groupId>
+          <version>4.0.0</version>
+        </dependency>
+      </dependencies>
+      <id>dev</id>
+    </profile>
+  </profiles>
 
 </project>
