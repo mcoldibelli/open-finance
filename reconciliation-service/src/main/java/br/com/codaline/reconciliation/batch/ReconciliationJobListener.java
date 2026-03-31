@@ -1,5 +1,7 @@
 package br.com.codaline.reconciliation.batch;
 
+import br.com.codaline.reconciliation.audit.AuditEvent;
+import br.com.codaline.reconciliation.audit.AuditEventPublisher;
 import br.com.codaline.reconciliation.domain.ReconciliationResultRepository;
 import br.com.codaline.reconciliation.domain.ReconciliationRun;
 import br.com.codaline.reconciliation.domain.ReconciliationRun.RunStatus;
@@ -7,6 +9,7 @@ import br.com.codaline.reconciliation.domain.ReconciliationRunRepository;
 import br.com.codaline.reconciliation.domain.ReconciliationStatus;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Map;
 import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobExecutionListener;
@@ -20,12 +23,15 @@ public class ReconciliationJobListener implements JobExecutionListener {
   private final ReconciliationRunRepository runRepository;
   private final ReconciliationResultRepository resultRepository;
   private final JdbcTemplate jdbcTemplate;
+  private final AuditEventPublisher auditPublisher;
 
   public ReconciliationJobListener(ReconciliationRunRepository runRepository,
-      ReconciliationResultRepository resultRepository, JdbcTemplate jdbcTemplate) {
+      ReconciliationResultRepository resultRepository, JdbcTemplate jdbcTemplate,
+      AuditEventPublisher auditPublisher) {
     this.runRepository = runRepository;
     this.resultRepository = resultRepository;
     this.jdbcTemplate = jdbcTemplate;
+    this.auditPublisher = auditPublisher;
   }
 
   @Override
@@ -39,6 +45,14 @@ public class ReconciliationJobListener implements JobExecutionListener {
     jobExecution.getExecutionContext().putLong("runId", saved.getId());
     jobExecution.getExecutionContext()
         .putString("competenceDate", run.getCompetenceDate().toString());
+
+    auditPublisher.publish(new AuditEvent(
+        "RECONCILIATION_JOB_STARTED",
+        LocalDateTime.now(),
+        "reconciliation-service",
+        null, null, null,
+        Map.of("fileReference", fileReference, "runId", saved.getId())
+    ));
   }
 
   @Transactional
@@ -67,6 +81,24 @@ public class ReconciliationJobListener implements JobExecutionListener {
               : RunStatus.FAILED
       );
       runRepository.save(run);
+
+      auditPublisher.publish(new AuditEvent(
+          run.getStatus() == RunStatus.COMPLETED
+              ? "RECONCILIATION_JOB_COMPLETED"
+              : "RECONCILIATION_JOB_FAILED",
+          LocalDateTime.now(),
+          "reconciliation-service",
+          null, null, null,
+          Map.of(
+              "fileReference", fileReference,
+              "runId", run.getId(),
+              "totalRecords", run.getTotalRecords(),
+              "matchedCount", run.getMatchedCount(),
+              "divergenceCount", run.getDivergenceCount(),
+              "status", run.getStatus().name()
+          )
+      ));
+
       jdbcTemplate.update("DELETE FROM staging_cip_transactions WHERE run_id = ?", run.getId());
     });
   }
