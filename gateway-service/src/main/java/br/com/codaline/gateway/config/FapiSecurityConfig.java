@@ -1,5 +1,6 @@
 package br.com.codaline.gateway.config;
 
+import br.com.codaline.gateway.audit.AuditEventPublisher;
 import br.com.codaline.gateway.filter.FapiMtlsValidationFilter;
 import br.com.codaline.gateway.security.JwkSetProvider;
 import br.com.codaline.gateway.security.JwtVerifier;
@@ -29,7 +30,8 @@ public class FapiSecurityConfig {
   public FapiMtlsValidationFilter fapiMtlsValidationFilter(
       @Value("${server.ssl.enabled:false}") boolean sslEnabled,
       @Value("${gateway.trust-proxy-headers:false}") boolean trustProxyHeaders,
-      JwtVerifier jwtVerifier) {
-    return new FapiMtlsValidationFilter(sslEnabled, trustProxyHeaders, jwtVerifier);
+      JwtVerifier jwtVerifier,
+      AuditEventPublisher auditPublisher) {
+    return new FapiMtlsValidationFilter(sslEnabled, trustProxyHeaders, jwtVerifier, auditPublisher);
   }
 }

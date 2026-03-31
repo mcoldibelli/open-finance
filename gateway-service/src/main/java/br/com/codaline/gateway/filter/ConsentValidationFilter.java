@@ -1,7 +1,11 @@
 package br.com.codaline.gateway.filter;
 
+import br.com.codaline.gateway.audit.AuditEvent;
+import br.com.codaline.gateway.audit.AuditEventPublisher;
 import br.com.codaline.gateway.consent.ConsentStatus;
 import br.com.codaline.gateway.consent.ConsentStore;
+import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,9 +24,11 @@ public class ConsentValidationFilter implements GatewayFilter, Ordered {
   private static final Logger log = LoggerFactory.getLogger(ConsentValidationFilter.class);
   private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
   private final ConsentStore consentStore;
+  private final AuditEventPublisher auditPublisher;
 
-  public ConsentValidationFilter(ConsentStore consentStore) {
+  public ConsentValidationFilter(ConsentStore consentStore, AuditEventPublisher auditPublisher) {
     this.consentStore = consentStore;
+    this.auditPublisher = auditPublisher;
   }
 
   @Override
@@ -55,6 +61,7 @@ public class ConsentValidationFilter implements GatewayFilter, Ordered {
                 "Permission " + requiredPermission + " not granted");
           }
 
+          audit("CONSENT_VALIDATION_SUCCESS", exchange, Map.of("permission", requiredPermission));
           return chain.filter(exchange);
         });
   }
@@ -72,7 +79,21 @@ public class ConsentValidationFilter implements GatewayFilter, Ordered {
   }
 
   private Mono<Void> reject(ServerWebExchange exchange, HttpStatus status, String reason) {
+    audit("CONSENT_VALIDATION_FAILURE", exchange, Map.of("reason", reason));
     return FilterResponseUtils.reject(exchange, status, reason, log);
+  }
+
+  private void audit(String eventType, ServerWebExchange exchange, Map<String, Object> details) {
+    var headers = exchange.getRequest().getHeaders();
+    auditPublisher.publish(new AuditEvent(
+        eventType,
+        LocalDateTime.now(),
+        "gateway-service",
+        headers.getFirst("X-FAPI-Interaction-ID"),
+        headers.getFirst("X-Client-ID"),
+        headers.getFirst("X-Consent-ID"),
+        details
+    ));
   }
 
   @Override

@@ -1,7 +1,11 @@
 package br.com.codaline.gateway.filter;
 
+import br.com.codaline.gateway.audit.AuditEvent;
+import br.com.codaline.gateway.audit.AuditEventPublisher;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
@@ -19,9 +23,12 @@ public class JtiReplayFilter implements GatewayFilter, Ordered {
 
   private static final Logger log = LoggerFactory.getLogger(JtiReplayFilter.class);
   private final ReactiveRedisTemplate<String, String> redisTemplate;
+  private final AuditEventPublisher auditPublisher;
 
-  public JtiReplayFilter(ReactiveRedisTemplate<String, String> redisTemplate) {
+  public JtiReplayFilter(ReactiveRedisTemplate<String, String> redisTemplate,
+      AuditEventPublisher auditPublisher) {
     this.redisTemplate = redisTemplate;
+    this.auditPublisher = auditPublisher;
   }
 
   @Override
@@ -52,8 +59,10 @@ public class JtiReplayFilter implements GatewayFilter, Ordered {
         .setIfAbsent("jti:" + jti, "1", Duration.ofSeconds(ttl))
         .flatMap(isNew -> {
           if (Boolean.TRUE.equals(isNew)) {
+            audit("JTI_CHECK_PASSED", exchange, Map.of("jti", jti));
             return chain.filter(exchange);
           }
+          audit("JTI_REPLAY_DETECTED", exchange, Map.of("jti", jti));
           return reject(exchange, HttpStatus.UNAUTHORIZED,
               "Token already used (replay detected)");
         })
@@ -66,6 +75,19 @@ public class JtiReplayFilter implements GatewayFilter, Ordered {
 
   private Mono<Void> reject(ServerWebExchange exchange, HttpStatus status, String reason) {
     return FilterResponseUtils.reject(exchange, status, reason, log);
+  }
+
+  private void audit(String eventType, ServerWebExchange exchange, Map<String, Object> details) {
+    var headers = exchange.getRequest().getHeaders();
+    auditPublisher.publish(new AuditEvent(
+        eventType,
+        LocalDateTime.now(),
+        "gateway-service",
+        headers.getFirst("X-FAPI-Interaction-ID"),
+        headers.getFirst("X-Client-ID"),
+        headers.getFirst("X-Consent-ID"),
+        details
+    ));
   }
 
   @Override

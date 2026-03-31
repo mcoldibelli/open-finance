@@ -1,10 +1,13 @@
 package br.com.codaline.gateway.filter;
 
+import br.com.codaline.gateway.audit.AuditEvent;
+import br.com.codaline.gateway.audit.AuditEventPublisher;
 import br.com.codaline.gateway.security.CertificateThumbprint;
 import br.com.codaline.gateway.security.JwtVerifier;
 import com.nimbusds.jwt.JWTClaimsSet;
 import java.security.cert.X509Certificate;
 import java.text.ParseException;
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,12 +27,14 @@ public class FapiMtlsValidationFilter implements GatewayFilter, Ordered {
   private final boolean sslEnabled;
   private final boolean trustProxyHeaders;
   private final JwtVerifier jwtVerifier;
+  private final AuditEventPublisher auditPublisher;
 
   public FapiMtlsValidationFilter(boolean sslEnabled, boolean trustProxyHeaders,
-      JwtVerifier jwtVerifier) {
+      JwtVerifier jwtVerifier, AuditEventPublisher auditPublisher) {
     this.sslEnabled = sslEnabled;
     this.trustProxyHeaders = trustProxyHeaders;
     this.jwtVerifier = jwtVerifier;
+    this.auditPublisher = auditPublisher;
   }
 
   @Override
@@ -103,6 +108,7 @@ public class FapiMtlsValidationFilter implements GatewayFilter, Ordered {
       }
 
       ServerWebExchange mutated = buildMutatedExchange(exchange, claims, presentedThumbprint);
+      audit("MTLS_VALIDATION_SUCCESS", mutated, Map.of("certThumbprint", presentedThumbprint));
       return chain.filter(mutated);
     } catch (ParseException e) {
       return reject(exchange, "Token processing error");
@@ -135,7 +141,21 @@ public class FapiMtlsValidationFilter implements GatewayFilter, Ordered {
   }
 
   private Mono<Void> reject(ServerWebExchange exchange, String reason) {
+    audit("MTLS_VALIDATION_FAILURE", exchange, Map.of("reason", reason));
     return FilterResponseUtils.reject(exchange, HttpStatus.UNAUTHORIZED, reason, log);
+  }
+
+  private void audit(String eventType, ServerWebExchange exchange, Map<String, Object> details) {
+    var headers = exchange.getRequest().getHeaders();
+    auditPublisher.publish(new AuditEvent(
+        eventType,
+        LocalDateTime.now(),
+        "gateway-service",
+        headers.getFirst("X-FAPI-Interaction-ID"),
+        headers.getFirst("X-Client-ID"),
+        headers.getFirst("X-Consent-ID"),
+        details
+    ));
   }
 
   @Override
