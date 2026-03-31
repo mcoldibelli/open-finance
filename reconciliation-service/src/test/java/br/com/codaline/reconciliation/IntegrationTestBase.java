@@ -37,5 +37,18 @@ public abstract class IntegrationTestBase {
     registry.add("spring.batch.jdbc.initialize-schema", () -> "always");
     registry.add("spring.batch.job.enabled", () -> "false");
     registry.add("spring.config.import", () -> "");
+    registry.add("kafka.topics.audit", () -> "test-audit");
+    registry.add("spring.kafka.consumer.group-id", () -> "test-audit-consumer");
+    registry.add("spring.kafka.consumer.auto-offset-reset", () -> "earliest");
+    registry.add("spring.kafka.consumer.key-deserializer",
+        () -> "org.apache.kafka.common.serialization.StringDeserializer");
+    registry.add("spring.kafka.consumer.value-deserializer",
+        () -> "org.springframework.kafka.support.serializer.JsonDeserializer");
+    registry.add("spring.kafka.consumer.properties.spring.json.trusted.packages",
+        () -> "br.com.codaline.reconciliation.audit");
+    registry.add("spring.kafka.consumer.properties.spring.json.use.type.headers",
+        () -> "false");
+    registry.add("spring.kafka.consumer.properties.spring.json.value.default.type",
+        () -> "br.com.codaline.reconciliation.audit.AuditEvent");
   }
 }

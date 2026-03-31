@@ -1,6 +1,7 @@
 package br.com.codaline.gateway.config;
 
 import br.com.codaline.gateway.IntegrationTestBase;
+import br.com.codaline.gateway.audit.AuditEventPublisher;
 import br.com.codaline.gateway.filter.FapiMtlsValidationFilter;
 import br.com.codaline.gateway.security.JwkSetProvider;
 import br.com.codaline.gateway.security.JwtVerifier;
@@ -32,7 +33,8 @@ public class TestJwtConfig {
   }
 
   @Bean
-  public FapiMtlsValidationFilter fapiMtlsValidationFilter(JwtVerifier jwtVerifier) {
-    return new FapiMtlsValidationFilter(false, true, jwtVerifier);
+  public FapiMtlsValidationFilter fapiMtlsValidationFilter(JwtVerifier jwtVerifier,
+      AuditEventPublisher auditPublisher) {
+    return new FapiMtlsValidationFilter(false, true, jwtVerifier, auditPublisher);
   }
 }
