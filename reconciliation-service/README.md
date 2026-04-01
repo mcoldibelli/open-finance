@@ -293,8 +293,8 @@ Os testes de integracao estendem `IntegrationTestBase`, que configura containers
 ## O que falta (roadmap)
 
 - [ ] Integracao real com S3 para leitura do arquivo (substituir `FileSystemResource` por `S3Resource`)
-- [ ] Dead letter queue para divergencias que falharam no Kafka
+- [x] Dead letter queue para divergencias que falharam no Kafka
 - [ ] Dashboard de monitoramento de runs (metricas do Spring Batch Actuator)
 - [ ] Alertas quando `divergenceRate > threshold` configuravel
-- [ ] Endpoint `GET /jobs/reconciliation/{fileReference}` para consultar status do run
-- [ ] `MISSING_IN_CIP`: transacoes no ledger que nao existem no arquivo CIP (adicionar RIGHT JOIN no `ReconciliationTasklet`)
+- [x] Endpoint `GET /jobs/reconciliation/{fileReference}` para consultar status do run
+- [x] `MISSING_IN_CIP`: transacoes no ledger que nao existem no arquivo CIP (dois LEFT JOINs no `ReconciliationTasklet`)
