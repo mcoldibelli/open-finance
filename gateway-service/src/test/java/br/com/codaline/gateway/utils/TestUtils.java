@@ -2,8 +2,8 @@ package br.com.codaline.gateway.utils;
 
 import static br.com.codaline.gateway.IntegrationTestBase.AS_KEY_PAIR;
 import static br.com.codaline.gateway.IntegrationTestBase.CLIENT_THUMBPRINT;
+import static br.com.codaline.gateway.IntegrationTestBase.TEST_KID;
 
-import br.com.codaline.gateway.config.TestJwtConfig;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -33,7 +33,7 @@ public class TestUtils {
 
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256)
-            .keyID(TestJwtConfig.TEST_KID).build(), claims
+            .keyID(TEST_KID).build(), claims
     );
     jwt.sign(new RSASSASigner(AS_KEY_PAIR.getPrivate()));
 

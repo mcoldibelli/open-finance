@@ -2,7 +2,6 @@ package br.com.codaline.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import br.com.codaline.gateway.config.TestJwtConfig;
 import br.com.codaline.gateway.consent.ConsentData;
 import br.com.codaline.gateway.consent.ConsentStatus;
 import br.com.codaline.gateway.consent.ConsentStore;
@@ -15,7 +14,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
-import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
@@ -31,7 +29,6 @@ import org.springframework.test.web.reactive.server.WebTestClient;
     "spring.cloud.gateway.routes[0].filters[1]=JtiReplay",
     "spring.cloud.gateway.routes[0].filters[2]=ConsentValidation"
 })
-@Import(TestJwtConfig.class)
 class JtiReplayFilterTest extends IntegrationTestBase {
 
   @Autowired
