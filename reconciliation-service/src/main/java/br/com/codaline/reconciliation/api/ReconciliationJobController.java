@@ -11,6 +11,8 @@ import org.springframework.batch.core.JobParametersBuilder;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -59,5 +61,13 @@ public class ReconciliationJobController {
 
     log.info("Reconciliation job accepted for file: {}", request.fileReference());
     return ResponseEntity.accepted().body(JobLaunchResponse.accepted(request.fileReference()));
+  }
+
+  @GetMapping("/reconciliation/{fileReference}")
+  public ResponseEntity<JobStatusResponse> getStatus(@PathVariable String fileReference) {
+    return runRepository.findByFileReference(fileReference)
+        .map(JobStatusResponse::from)
+        .map(ResponseEntity::ok)
+        .orElse(ResponseEntity.notFound().build());
   }
 }
