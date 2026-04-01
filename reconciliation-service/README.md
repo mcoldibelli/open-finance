@@ -2,7 +2,7 @@
 
 Servico de reconciliacao financeira que compara transacoes registradas no ledger interno com os arquivos CNAB240 enviados pela CIP (Camara Interbancaria de Pagamentos) no ambito do SPB (Sistema de Pagamentos Brasileiro), regulado pelo BACEN.
 
-O modulo le um arquivo posicional CNAB240, cruza cada transacao com o ledger via `endToEndId`, e classifica o resultado como `MATCHED`, `AMOUNT_DIVERGENCE` ou `MISSING_IN_LEDGER`. Divergencias sao publicadas em um topico Kafka para consumo por outros servicos.
+O modulo le um arquivo posicional CNAB240, cruza cada transacao com o ledger via `endToEndId`, e classifica o resultado como `MATCHED`, `AMOUNT_DIVERGENCE`, `MISSING_IN_LEDGER` ou `MISSING_IN_CIP`. Divergencias sao publicadas em um topico Kafka (com DLQ para falhas) e todos os eventos do job sao registrados em uma trilha de auditoria imutavel (BACEN Resolucao 4.658).
 
 ---
 
@@ -32,12 +32,17 @@ POST /jobs/reconciliation
         v
   Step 3 — Publicacao
   JpaPagingItemReader (results divergentes) --chunk(100)--> DivergenceKafkaWriter
-  -> publica divergencias (AMOUNT_DIVERGENCE, MISSING_IN_LEDGER) no Kafka
+  -> publica divergencias (AMOUNT_DIVERGENCE, MISSING_IN_LEDGER, MISSING_IN_CIP) no Kafka
+  -> falhas de publicacao vao para DLQ (reconciliation.divergences.dlq)
         |
         v
   ReconciliationJobListener.afterJob()
   -> agrega contadores no ReconciliationRun
   -> limpa staging_cip_transactions do run
+  -> publica audit event (JOB_COMPLETED ou JOB_FAILED)
+
+  GET /jobs/reconciliation/{fileReference}
+  -> consulta status do run (200 ou 404)
 ```
 
 Decisao arquitetural documentada em [ADR-001](../docs/adr/001-staging-table-reconciliation.md).
@@ -137,6 +142,24 @@ END
 
 ---
 
+### Por que trilha de auditoria append-only com Kafka
+
+**Problema:** BACEN Resolucao 4.658 exige rastreabilidade de eventos de seguranca com retencao minima de 90 dias e garantia de imutabilidade.
+
+**Solucao:** Eventos publicados no Kafka (`audit.events`, retencao 90 dias), consumidos por `AuditEventConsumer` e persistidos em tabela `audit_events` com trigger que impede UPDATE/DELETE.
+
+**Por que:** O publish fire-and-forget no Kafka desacopla o filtro/listener do I/O de persistencia — o pipeline de seguranca do gateway nao bloqueia em escrita de banco. A imutabilidade e garantida a nivel de banco (trigger), nao de aplicacao — mesmo acesso direto ao PostgreSQL nao consegue alterar registros. JSONB no campo `details` permite metadados especificos por tipo de evento sem migracoes de schema.
+
+### Por que Dead Letter Queue para divergencias
+
+**Problema:** Se o consumer de divergencias falhar ao processar uma mensagem (ex: erro de deserializacao, bug no handler), a mensagem pode travar o consumer ou ser perdida.
+
+**Solucao:** `DeadLetterPublishingRecoverer` com `FixedBackOff(1s, 2 retries)` no `KafkaConsumerConfig`. Apos 3 tentativas, a mensagem vai para `reconciliation.divergences.dlq`.
+
+**Por que:** Retry infinito travaria o consumer em mensagens "envenenadas". Sem DLQ, a mensagem seria descartada silenciosamente. O DLQ preserva a mensagem original para investigacao manual ou reprocessamento. `FixedBackOff` em vez de exponencial porque controlamos ambos os lados do pipeline — erros transientes se resolvem rapido ou nao se resolvem.
+
+---
+
 ## Formato CNAB240
 
 CNAB240 e um formato de arquivo posicional (flat-file) definido pela FEBRABAN (Federacao Brasileira de Bancos). E utilizado pela CIP (Camara Interbancaria de Pagamentos) no SPB (Sistema de Pagamentos Brasileiro), regulado pelo BACEN.
@@ -219,6 +242,35 @@ CREATE TABLE ledger_transactions (
 
 Valores monetarios usam `NUMERIC(15,2)` — tipo exato, sem ponto flutuante. Indices em `end_to_end_id`, `run_id` e `status` para consultas frequentes.
 
+Trilha de auditoria (`V4__create_audit_events.sql`):
+
+```sql
+CREATE TABLE audit_events (
+    id             BIGSERIAL PRIMARY KEY,
+    event_type     VARCHAR(100) NOT NULL,
+    occurred_at    TIMESTAMP    NOT NULL,
+    source         VARCHAR(100) NOT NULL,
+    interaction_id VARCHAR(255),
+    client_id      VARCHAR(255),
+    consent_id     VARCHAR(255),
+    details        JSONB,
+    created_at     TIMESTAMP    NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_audit_event_type ON audit_events (event_type);
+CREATE INDEX idx_audit_occurred_at ON audit_events (occurred_at);
+CREATE INDEX idx_audit_interaction ON audit_events (interaction_id);
+
+-- Trigger impede UPDATE/DELETE — imutabilidade a nivel de banco
+CREATE FUNCTION prevent_audit_modification() RETURNS TRIGGER AS $$
+BEGIN RAISE EXCEPTION 'audit_events is append-only'; END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER audit_immutable
+    BEFORE UPDATE OR DELETE ON audit_events
+    FOR EACH ROW EXECUTE FUNCTION prevent_audit_modification();
+```
+
 ---
 
 ## Como rodar localmente
@@ -254,15 +306,31 @@ curl -X POST http://localhost:8082/jobs/reconciliation \
 
 - O arquivo `.env` deve conter: `REDIS_PASSWORD`, `POSTGRES_PASSWORD`
 - O arquivo CNAB deve estar em `./data/input` (ou configurado via variavel de ambiente `RECONCILIATION_INPUT_PATH`)
-- A resposta do endpoint e **202 Accepted** — o job roda de forma assincrona via `CompletableFuture.runAsync`
-- Para consultar o status do job, verificar a tabela `reconciliation_runs` no banco:
+- A resposta do endpoint e **202 Accepted** — o job roda de forma assincrona
+- Para consultar o status do job:
 
-```sql
-SELECT file_reference, status, total_records, matched_count,
-       divergence_count, missing_in_ledger_count, started_at, finished_at
-FROM reconciliation_runs
-WHERE file_reference = 'CIP_20240115.txt';
+```bash
+curl http://localhost:8082/jobs/reconciliation/CIP_20240115.txt
 ```
+
+Resposta (200 OK):
+
+```json
+{
+  "fileReference": "CIP_20240115.txt",
+  "status": "COMPLETED",
+  "competenceDate": "2024-01-15",
+  "startedAt": "2024-01-15T10:00:00",
+  "finishedAt": "2024-01-15T10:02:30",
+  "totalRecords": 150000,
+  "matchedCount": 149500,
+  "divergenceCount": 300,
+  "missingInLedgerCount": 150,
+  "missingInCipCount": 50
+}
+```
+
+Se o `fileReference` nao existir, retorna **404 Not Found**.
 
 ---
 
@@ -273,6 +341,10 @@ WHERE file_reference = 'CIP_20240115.txt';
 | `CipFileReaderTest`                  | Unitario    | Parsing de arquivo CNAB240: leitura de campos posicionais, conversao de centavos para `BigDecimal`, header ignorado, arquivo sem transacoes                       |
 | `CipTransactionFieldSetMapperTest`   | Unitario    | Validacao do campo `amount`: valor numerico valido, rejeicao de caracteres invalidos, rejeicao de valor vazio, conversao `movePointLeft(2)`                       |
 | `ReconciliationJobIntegrationTest`   | Integracao  | Fluxo completo do job: leitura CNAB -> reconciliacao com ledger -> persistencia de resultados -> contadores agregados no run. Usa Testcontainers (PostgreSQL + Kafka reais) |
+| `AuditEventConsumerTest`             | Unitario    | Consumer Kafka persiste audit event na tabela com campos corretos (Mockito)             |
+| `AuditEventEntityTest`               | Unitario    | Conversao de `AuditEvent` record para `AuditEventEntity` JPA                           |
+| `KafkaTopicConfigTest`               | Unitario    | Topico `audit.events` com retencao 90 dias, topico DLQ criado com nome correto         |
+| `DivergenceConsumerTest`             | Unitario    | Consumer processa AMOUNT_DIVERGENCE e MISSING_IN_LEDGER sem erro                        |
 
 Os testes de integracao estendem `IntegrationTestBase`, que configura containers reais via Testcontainers:
 - PostgreSQL 16 (alpine) para o banco de dados
@@ -290,11 +362,8 @@ Os testes de integracao estendem `IntegrationTestBase`, que configura containers
 
 ---
 
-## O que falta (roadmap)
+## Roadmap futuro
 
 - [ ] Integracao real com S3 para leitura do arquivo (substituir `FileSystemResource` por `S3Resource`)
-- [x] Dead letter queue para divergencias que falharam no Kafka
 - [ ] Dashboard de monitoramento de runs (metricas do Spring Batch Actuator)
 - [ ] Alertas quando `divergenceRate > threshold` configuravel
-- [x] Endpoint `GET /jobs/reconciliation/{fileReference}` para consultar status do run
-- [x] `MISSING_IN_CIP`: transacoes no ledger que nao existem no arquivo CIP (dois LEFT JOINs no `ReconciliationTasklet`)

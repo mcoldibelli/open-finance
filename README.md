@@ -1,9 +1,9 @@
 # Open Finance
 
 Plataforma de servicos Open Finance Brasil composta por um API Gateway FAPI 1.0 Advanced (mTLS,
-certificate-bound access tokens, JTI replay prevention, validacao de consentimentos e rate limiting)
-e um servico de reconciliacao financeira que compara transacoes do ledger interno com arquivos CNAB240
-da CIP via Spring Batch.
+certificate-bound access tokens, JWKS com rotacao de chaves, JTI replay prevention, validacao de
+consentimentos e rate limiting), um servico de reconciliacao financeira CIP/CNAB240 via Spring Batch,
+e uma trilha de auditoria imutavel conforme BACEN Resolucao 4.658.
 
 [![CI](https://github.com/mcoldibelli/open-finance/actions/workflows/ci.yml/badge.svg)](https://github.com/mcoldibelli/open-finance/actions/workflows/ci.yml)
 [![CD](https://github.com/mcoldibelli/open-finance/actions/workflows/cd.yml/badge.svg)](https://github.com/mcoldibelli/open-finance/actions/workflows/cd.yml)
@@ -37,6 +37,8 @@ flowchart TB
 
     subgraph gw [Gateway :8443]
         direction TB
+        JWKS["GET /.well-known/jwks.json
+        JwkSetProvider (cache + refresh)"]
         F1["FapiMtlsValidation — order(-100)
         mTLS + JWT verify + cnf binding"]
         F2["JtiReplay — order(-95)
@@ -45,6 +47,7 @@ flowchart TB
         status + permissoes"]
         F4["RequestRateLimiter
         chave = consent_id"]
+        JWKS -.-> F1
         F1 --> F2 --> F3 --> F4
     end
 
@@ -59,10 +62,12 @@ flowchart TB
     gw -.->|perfis por ambiente| CS
     gw -->|consent store + JTI + rate limit| REDIS
     gw -->|proxy reverso| ACCS
+    gw -->|audit events| KAFKA
     RECON -.->|perfis por ambiente| CS
-    RECON -->|ledger + reconciliation runs| PG
-    RECON -->|divergencias| KAFKA
+    RECON -->|ledger + runs + audit| PG
+    RECON -->|divergencias + DLQ| KAFKA
     RECON -->|idempotencia de job| REDIS
+    KAFKA -->|audit.events| RECON
 ```
 
 O Gateway e o unico ponto de entrada para o Open Finance. Nenhum servico interno aceita trafego
@@ -84,10 +89,10 @@ publicando divergencias no Kafka. Detalhes de design do batch em
 | **Spring Cloud Config**  | Configuracao centralizada     | Perfis por ambiente (`local`, `docker`), sem rebuild — rotas e rate limits podem mudar sem redeploy                  |
 | **Redis**                | Rate limiting + consent + JTI | TTL nativo para expiracao de consentimentos e JTI replay, operacoes atomicas via Lua script, Lettuce (non-blocking)  |
 | **Nimbus JOSE+JWT**      | Processamento JWT             | Implementacao de referencia para JOSE/JWT, suporte a RS256 e claims customizadas (`cnf`, `consent_id`)               |
-| **Spring Batch 5**       | Reconciliacao em batch        | Chunk-oriented processing, particionamento nativo por ISPB, restart/retry, listeners para auditoria                  |
+| **Spring Batch 5**       | Reconciliacao em batch        | Chunk-oriented processing com 3 steps sequenciais, restart/retry por step, listeners para auditoria                  |
 | **Spring Data JPA**      | Persistencia                  | Abstracao sobre Hibernate, batch insert com `hibernate.jdbc.batch_size=500` e `order_inserts=true`                   |
 | **PostgreSQL 16**        | Banco de dados                | ACID, `NUMERIC(15,2)` para valores monetarios, Flyway para migracoes versionadas                                    |
-| **Apache Kafka 3.7**     | Mensageria assincrona         | Pub/sub para divergencias de reconciliacao, ordering por `endToEndId` (partition key)                                |
+| **Apache Kafka 3.7**     | Mensageria assincrona         | Divergencias (pub/sub + DLQ), audit trail (90 dias retencao — BACEN 4.658), ordering por `endToEndId`               |
 | **Bouncy Castle**        | Certificados de teste         | Geracao programatica de KeyPair e X.509 em memoria — testes reproduziveis sem arquivos externos                      |
 | **Testcontainers**       | Infra de teste                | Redis, PostgreSQL e Kafka reais em containers efemeros, sem dependencia de infra local                               |
 | **Docker**               | Containerizacao               | Multi-stage build (JDK -> JRE), imagem Alpine, usuario non-root                                                     |
@@ -163,24 +168,56 @@ Se o Redis estiver indisponivel, o filtro retorna **503 Service Unavailable** (f
 decisao de fail-closed e intencional: em um contexto FAPI, permitir replay por falha de infra e mais
 danoso do que rejeitar temporariamente requests legitimas.
 
-### JwtVerifier imutavel
+### JWKS endpoint e rotacao de chaves (RFC 7517)
 
-O `JwtVerifier` recebe `RSASSAVerifier` via construtor — sem `setPublicKey()`, sem `@PostConstruct`.
+O Gateway expoe `GET /.well-known/jwks.json` via `JwksController`, retornando o `JWKSet` com as
+chaves publicas do Authorization Server. O `JwkSetProvider` implementa cache com TTL configuravel
+e refresh-on-miss:
+
+- Cache hit: retorna chaves do cache sem I/O
+- Cache miss (ex: nova `kid` apos rotacao): busca o JWKS novamente e atualiza o cache
+- TTL expira: proxima verificacao faz refresh automatico
+
+O `JwtVerifier` resolve a chave pelo `kid` do header JWT via `JwkSetProvider`. Se o `kid` nao
+existe no cache, o provider tenta um refresh antes de rejeitar — grace period para rotacao.
 
 ```
-Producao                             Testes
-JwtConfig.java                       TestJwtConfig.java
-@ConditionalOnResource(as-public.pem)   @TestConfiguration
-  └─ @Bean RSASSAVerifier               └─ @Bean RSASSAVerifier
-       (carrega PEM do classpath)             (chave gerada em memoria)
+Producao                              Testes
+FapiSecurityConfig                    IntegrationTestBase.TestSecurityConfig
+@ConditionalOnProperty(fapi...)         @TestConfiguration
+  └─ JwkSetProvider(url, ttl)            └─ JwkSetProvider.withPreloadedKeys(jwkSet)
+       (fetch HTTP + cache)                   (chaves RSA geradas em memoria)
           │                                        │
           └──────────┐            ┌────────────────┘
                      ▼            ▼
-               JwtVerifier(RSASSAVerifier verifier)
+            JwtVerifier(JwkSetProvider provider)
 ```
 
-`JwtConfig` so e carregada quando `classpath:as-public.pem` existe (`@ConditionalOnResource`). Nos
-testes, o `TestJwtConfig` fornece o bean com a chave publica gerada pelo `CertificateGenerator`.
+### Trilha de auditoria (BACEN Resolucao 4.658)
+
+Todos os eventos de seguranca do pipeline de filtros e do batch de reconciliacao sao publicados no
+topico Kafka `audit.events` e persistidos em tabela append-only no PostgreSQL:
+
+```
+Gateway filters                     Reconciliation JobListener
+(MTLS_VALIDATION, JTI_REPLAY,      (JOB_STARTED, JOB_COMPLETED,
+ CONSENT_VALIDATION)                 JOB_FAILED)
+        │                                   │
+        └───── AuditEventPublisher ─────────┘
+                       │
+                  Kafka (audit.events)
+                  retencao: 90 dias
+                       │
+                AuditEventConsumer
+                       │
+              PostgreSQL (audit_events)
+              append-only + trigger
+              impede UPDATE/DELETE
+```
+
+A tabela `audit_events` usa trigger PostgreSQL que levanta excecao em UPDATE/DELETE — garantia de
+imutabilidade a nivel de banco (nao depende da aplicacao). Campos JSONB armazenam detalhes
+especificos de cada tipo de evento sem schema rigido.
 
 ### Tratamento de erros no pipeline reativo
 
@@ -341,7 +378,7 @@ roda em containers efemeros via Testcontainers.
 | Componente            | Gateway                                                  | Reconciliation                                           |
 |-----------------------|----------------------------------------------------------|----------------------------------------------------------|
 | **Certificados**      | `CertificateGenerator` gera KeyPair RSA e X.509          | —                                                        |
-| **Chave publica AS**  | `TestJwtConfig` injeta `RSASSAVerifier` com chave gerada | —                                                        |
+| **Chave publica AS**  | `TestSecurityConfig` injeta `JwkSetProvider` com chave gerada | —                                                   |
 | **Redis**             | Testcontainers `redis:7.2-alpine` com porta dinamica     | —                                                        |
 | **PostgreSQL**        | —                                                        | Testcontainers `postgres:16-alpine`                      |
 | **Kafka**             | —                                                        | Testcontainers `confluentinc/cp-kafka:7.6.0`             |
@@ -377,6 +414,9 @@ roda em containers efemeros via Testcontainers.
 | `CipFileReaderTest`                | Unitario   | Parsing CNAB240: campos posicionais, conversao centavos, header ignorado               |
 | `CipTransactionFieldSetMapperTest` | Unitario   | Validacao do campo `amount`: numerico, rejeicao de invalidos, `movePointLeft(2)`       |
 | `ReconciliationJobIntegrationTest` | Integracao | Fluxo completo: CNAB -> reconciliacao com ledger -> persistencia -> contadores no run  |
+| `AuditEventConsumerTest`           | Unitario   | Consumer Kafka persiste audit events com campos corretos                                |
+| `KafkaTopicConfigTest`             | Unitario   | Topico audit com retencao 90 dias, topico DLQ criado corretamente                      |
+| `DivergenceConsumerTest`           | Unitario   | Consumer de divergencias processa AMOUNT_DIVERGENCE e MISSING_IN_LEDGER sem erro        |
 
 ---
 
