@@ -11,76 +11,42 @@ env:
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/open-finance
 
 jobs:
-
   build-images:
-    name: Build and push images
+    name: Build ${{ matrix.service }}
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    strategy:
+      matrix:
+        service: [ config-server, gateway-service, accounts-service, reconciliation-service ]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Login no GHCR
+      - name: Login GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Docker Buildx
+      - name: Setup Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build e push config-server
+      - name: Build e push
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: config-server/Dockerfile
+          file: ${{ matrix.service }}/Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE_PREFIX }}/config-server:${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/config-server:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push gateway-service
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: gateway-service/Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/gateway-service:${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/gateway-service:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push accounts-service
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: accounts-service/Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/accounts-service:${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/accounts-service:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push reconciliation-service
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: reconciliation-service/Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/reconciliation-service:${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/reconciliation-service:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
   deploy-staging:
     name: Deploy staging
